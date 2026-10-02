@@ -56,6 +56,7 @@ The modes and the budget you name are the permission: within them the AI powers 
 
 Just say what you want done: "start the training", "shut it down once the data is copied", "how much of this month's budget is left". The AI follows `SKILL.md`: it powers on, deploys the guard, runs the job and shuts down, without narrating each step; you get one line after the power-on and one after the shutdown. You do not have to click a power-on or a power-off in the console yourself (except without a browser tool, see "Two levels").
 
+- **With automated research or experiment pipelines.** When you say "run the experiments of the plan", or another experiment skill reaches the step that needs this instance, the AI brings this skill in first: power-on, starting the jobs and shutdown all go through it. The `## AutoDL` section of the project's CLAUDE.md says that this instance is run through the skill, so every conversation in the project knows
 - **When it does not pick the skill up by itself**, type `/autodl-gpu`, or say "use autodl-gpu"
 - **The AI can act only while the conversation goes on.** Let it wait in the background for the job to end, and it stays in charge until the results are fetched and the machine is shut down. When the conversation is gone (the app closed, the network down), the job runs on and the guard on the instance shuts the machine down once it is idle
 - The first time an instance is powered on you may see a shutdown timer appear and disappear in the console. It is a provisional backstop the AI sets until the guard is installed, and it is normal

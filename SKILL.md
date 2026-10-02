@@ -1,6 +1,6 @@
 ---
 name: autodl-gpu
-description: Use when work in any project needs an AutoDL instance powered on or off in GPU mode (有卡) or non-GPU mode (无卡), switched between the two, checked (status, balance, billing, free GPUs), or kept from burning paid GPU time while idle or after the AI session ends (空转, 忘关机, 自动关机).
+description: Use when work in any project needs an AutoDL instance powered on or off in GPU mode (有卡) or non-GPU mode (无卡), switched between them, checked (status, balance, billing, free GPUs), or kept from burning GPU time while idle or after the session ends (空转, 忘关机, 自动关机); also, where the project's GPU is an AutoDL instance, before experiments, training or data transfer run on it, e.g. in an automated research or experiment pipeline, under another experiment skill, or on a request like 按计划自动跑实验 (自动科研).
 ---
 
 # AutoDL 开关机
@@ -96,7 +96,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 4. 告诉用户之前开着的那段也在计费。这一行已有的定时关机不取消，汇报里说一句；没有而用户选了的，照手册第 8 节设。然后做开机流程第 8、9 步；按次开机算的最晚关机与定时关机从 `booted_at` 算起，只设剩下的时长。deploy 或 arm 不成时不自动关机，这台不是你开的：不跑任务，告诉用户，关不关由用户定。它在另一种模式下运行时，先按"切换模式"关机
 
 ## 跑任务
-- 长任务一律 `ctl run <别名> <任务名> --cmd '<命令>' [--then-off] [--quiet <时长>] [--log <数据盘上的路径>]`，长命令用 `--cmd-file <本地文件>`。`ctl tail <别名> <任务名>` 看日志，`ctl tail <别名> guard` 看守护日志。日志写文件，关机后标准输出就看不到了。不要自己用 ssh 起 nohup 进程，它不在登记里。任务会跑过上次预算检查算到的时刻，先 probe（见"用量与预算"）。设了控制台定时关机时，启动前看一眼任务会不会跑过那个时刻，会的话先告诉用户到点它会被直接切断，由用户决定改定时还是照跑，再启动
+- 长任务一律 `ctl run <别名> <任务名> --cmd '<命令>' [--then-off] [--quiet <时长>] [--log <数据盘上的路径>]`，长命令用 `--cmd-file <本地文件>`。`ctl tail <别名> <任务名>` 看日志，`ctl tail <别名> guard` 看守护日志。日志写文件，关机后标准输出就看不到了。不要自己用 ssh 起 nohup 或 screen 进程，它不在登记里；别的 skill 或流程要在这台实例上起任务的，也改用 `ctl run`。任务会跑过上次预算检查算到的时刻，先 probe（见"用量与预算"）。设了控制台定时关机时，启动前看一眼任务会不会跑过那个时刻，会的话先告诉用户到点它会被直接切断，由用户决定改定时还是照跑，再启动
 - 传文件用 `ctl push <别名> <本地路径> <实例上的父目录>` 与 `ctl pull <别名> <实例上的路径> <本地目录>`。目标已存在时加 `--overwrite`，旧的那份改名为 `.bak-*` 保留、不删除。退出 6 表示可能已经放到位，先看目标再决定要不要重传
 - **在用按实际占用算。** 守护每分钟看一次 GPU 利用率、容器的 CPU、磁盘读写和网络收发，任一样超过阈值就算在用，读不到的信号也按在用算。登记的任务、开着的 screen 或 tmux 本身不算。从最后一次在用算起，空闲满 `--idle` 就关机
 - **任务会长时间安静，必须提前声明。** 等外部数据、sleep、等定时触发这类阶段没有活动，会被当成空闲关掉，不能等关了机再补。启动时加 `--quiet <时长>`，已经在跑的用 `ctl quiet <别名> <任务名> <时长> --reason '<理由>'`。时长从声明那一刻起算（`run --quiet` 是任务启动时），要盖到最后一个安静阶段结束，再留些余量：先训练 2 小时再等 40 分钟，启动时给的是 2 小时 40 分加余量。声明之后对用户说一句"已声明任务 X 最多可能安静 N 分钟"。任务一结束声明就失效
@@ -173,6 +173,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 
 ```
 ## AutoDL
+- skill: autodl-gpu（这台实例的开关机、切换模式与跑任务都用它，不直接 ssh 起任务，也不请用户手动开关机）
 - instance_id: abcd123456-1234abcd（控制台里的实例 ID）
 - ssh_alias: autodl-demo
 - data_dir: /root/autodl-tmp

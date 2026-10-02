@@ -172,11 +172,29 @@ def test_skill_front_matter_and_length():
     m = re.match(r"---\nname: autodl-gpu\ndescription: (Use when [^\n]+)\n---\n", skill)
     assert m, skill[:200]
     assert len(m.group(0)) <= 1024 and len(m.group(1)) <= 500
-    # read in one go: at the 0.41 tokens a byte measured on these files, 35000 bytes are about 14.5k tokens (the Read
+    # read in one go: at the 0.41 tokens a byte measured on these files, 36000 bytes are about 14.8k tokens (the Read
     # tool returns 25k at most). It was 30000 until the phase 7 review added the timer before a power-on, the budget
-    # baselines and exit 13: things to know before acting, which is why they are not left to the reference files
-    assert len(skill.encode("utf-8")) <= 35000 and skill.count("\n") <= 220
+    # baselines and exit 13: things to know before acting, which is why they are not left to the reference files.
+    # 35000 until the description named automated experiment runs and the project section named the skill: both
+    # decide whether the skill is found at all, so they cannot move to a reference file either
+    assert len(skill.encode("utf-8")) <= 36000 and skill.count("\n") <= 220
     assert "\r" not in skill and skill.endswith("\n")
+
+
+def test_the_skill_is_found_when_experiments_run_by_themselves():
+    """The skill is for an AI that runs experiments by itself. The description names that situation (a pipeline, another
+    experiment-running skill, a request to run the plan), the section the skill writes into a project names the skill,
+    and jobs that other workflows start on the instance go through ctl run as well."""
+    skill = _text(SKILL)
+    desc = re.match(r"---\nname: autodl-gpu\ndescription: (Use when [^\n]+)\n---\n", skill).group(1)
+    for needed in ("experiment", "pipeline", "自动跑实验"):
+        assert needed in desc, needed
+    # the condition comes before the situations it governs: a blind reader took "按计划自动跑实验" on its own as a pull
+    assert desc.index("where the project's GPU is an AutoDL instance") < desc.index("pipeline") < desc.index("自动跑实验")
+    block = skill.split("```\n## AutoDL\n", 1)[1].split("```", 1)[0]
+    assert "- skill: autodl-gpu" in block, block
+    run = [line for line in skill.splitlines() if line.startswith("- 长任务一律 `ctl run")]
+    assert len(run) == 1 and "别的 skill 或流程" in run[0], run
 
 
 def test_skill_does_not_bring_back_the_rules_of_the_first_version():
