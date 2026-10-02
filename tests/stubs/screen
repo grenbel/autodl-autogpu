@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Test stub: `screen -ls` prints $STUB_DIR/screen_out, or "No Sockets found" when it is
+# empty (like GNU screen). With $STUB_DIR/screen_fail it fails with only an error on stderr.
+if [ "${1:-}" != "-ls" ]; then
+  echo "stub screen: only -ls is supported" >&2
+  exit 1
+fi
+if [ -f "$STUB_DIR/screen_fail" ]; then
+  echo "Cannot access /run/screen/S-root: Permission denied" >&2
+  exit 1
+fi
+if [ -s "$STUB_DIR/screen_out" ]; then cat "$STUB_DIR/screen_out"; else echo "No Sockets found in /run/screen/S-root."; fi
+exit 1

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Test stub for sync: notes every call in $STUB_DIR/sync_calls, and every call that finishes in
+# $STUB_DIR/sync_done. While $STUB_DIR/sync_hang exists it hangs and ignores TERM, like a sync stuck in the
+# kernel on a filesystem that does not answer (timeout cannot end it), but for 25 s at most, so that an
+# interrupted test run leaves nothing behind for long. If $STUB_DIR/sync_delay holds a number of seconds,
+# it takes that long, like a healthy but slow disk. If $STUB_DIR/sync_no_f exists, "-f" is refused, like
+# coreutils older than 8.24.
+echo "sync${*:+ $*}" >> "$STUB_DIR/sync_calls"
+if [ "${1:-}" = -f ] && [ -f "$STUB_DIR/sync_no_f" ]; then
+  echo "sync: invalid option -- 'f'" >&2
+  exit 1
+fi
+trap '' TERM
+while [ -f "$STUB_DIR/sync_hang" ] && [ "$SECONDS" -lt 25 ]; do sleep 0.2; done
+if [ -s "$STUB_DIR/sync_delay" ]; then sleep "$(cat "$STUB_DIR/sync_delay")"; fi
+echo "sync${*:+ $*}" >> "$STUB_DIR/sync_done"
+exit 0

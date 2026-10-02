@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'">
+<title>console.js offline test</title>
+</head>
+<body>
+<!-- Offline test page for reference/console.js. Open this file from disk in a browser, paste the full text of
+     reference/console.js into the box and press Run. The test replaces the page with its fake console pages while it
+     runs, then shows the result as JSON; reload the page to run again. Compare the digest in the result with
+     python tests/console/fn_digest.py reference/console.js. Nothing here uses the network. -->
+<p>Paste the full text of reference/console.js:</p>
+<textarea id="src" rows="8" cols="100"></textarea>
+<p><button id="go" type="button">Run</button></p>
+<script src="fixtures.js"></script>
+<script src="run.js"></script>
+<script>
+document.getElementById('go').addEventListener('click', function () {
+  var src = document.getElementById('src').value;
+  window.__con.runSource(src).then(function (out) {
+    var pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(JSON.parse(out), null, 2);
+    document.body.replaceChildren(pre);
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Test stub that behaves enough like GNU screen for the guard:
+#   -dmS NAME CMD...   start CMD detached in a new session, with STY=<id>.NAME
+#   -ls                list live sessions in screen's format (tab, id.name, tab, state)
+#   -S NAME -X quit    end that session
+# Sessions are recorded in $STUB_DIR/fake_screen as "<id>.<name> <pid>" lines.
+set -u
+DB="$STUB_DIR/fake_screen"
+touch "$DB"
+case "${1:-}" in
+  -dmS)
+    name="$2"
+    shift 2
+    STY="$$.$name" setsid "$@" > /dev/null 2>&1 < /dev/null &
+    echo "$$.$name $!" >> "$DB"
+    exit 0
+    ;;
+  -ls)
+    n=0
+    lines=""
+    while read -r sty pid; do
+      [ -n "$sty" ] || continue
+      if kill -0 "$pid" 2> /dev/null; then
+        lines="$lines$(printf '\t%s\t(Detached)' "$sty")"$'\n'
+        n=$((n + 1))
+      fi
+    done < "$DB"
+    if [ "$n" -eq 0 ]; then
+      echo "No Sockets found in /run/screen/S-test."
+    else
+      echo "There are screens on:"
+      printf '%s' "$lines"
+      echo "$n Sockets in /run/screen/S-test."
+    fi
+    exit 1
+    ;;
+  -S)
+    [ "${3:-}" = "-X" ] && [ "${4:-}" = "quit" ] || exit 1
+    while read -r sty pid; do
+      case "$sty" in *".$2") kill -- "-$pid" 2> /dev/null || kill "$pid" 2> /dev/null ;; esac
+    done < "$DB"
+    exit 0
+    ;;
+esac
+echo "fake-screen: unsupported arguments: $*" >&2
+exit 1

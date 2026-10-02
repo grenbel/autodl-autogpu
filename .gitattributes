@@ -1,0 +1,4 @@
+# Keep LF in the working tree even though Git for Windows sets core.autocrlf=true;
+# scripts/autodl_guard.sh runs under bash on the AutoDL instance and the tests run in WSL;
+# both break with CRLF.
+* text=auto eol=lf

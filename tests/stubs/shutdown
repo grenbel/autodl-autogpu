@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Test stub for /usr/bin/shutdown: records the call instead of powering off.
+# If $STUB_DIR/shutdown_fail exists, this call fails once and removes the file.
+# While $STUB_DIR/shutdown_hang exists, this call hangs (a shutdown that never returns).
+# While $STUB_DIR/shutdown_fail_always exists, every call fails.
+echo "shutdown called $(date +%s)" >> "$STUB_DIR/shutdown_calls"
+while [ -f "$STUB_DIR/shutdown_hang" ]; do sleep 0.2; done
+if [ -f "$STUB_DIR/shutdown_fail_always" ]; then
+  echo "stub shutdown: simulated failure" >&2
+  exit 1
+fi
+if [ -f "$STUB_DIR/shutdown_fail" ]; then
+  rm -f "$STUB_DIR/shutdown_fail"
+  echo "stub shutdown: simulated failure" >&2
+  exit 1
+fi
+exit 0

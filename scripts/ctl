@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Launcher for autodl_ctl.py; use it from Git Bash (the Bash tool of Claude Code on Windows) or any bash.
+# Git Bash rewrites arguments that start with / (such as /root/autodl-tmp) into Windows paths before a
+# native Windows python sees them: this launcher turns that rewriting off and passes the script path in
+# Windows form. It runs the first Python that really works (3.8 or later with tarfile.data_filter):
+# AUTODL_PYTHON alone when it is set, else python3, then python. A placeholder that fails or says
+# nothing, such as the Windows Store's python3, is skipped.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script="$here/autodl_ctl.py"
+if command -v cygpath > /dev/null 2>&1; then script="$(cygpath -m "$script")"; fi
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+# one run: the marker only when both checks pass; written without a newline, as Windows Python would end it with \r\n
+ok() { [ "$("$1" -c 'import sys, tarfile; sys.stdout.write("autodl-py-ok" if sys.version_info >= (3, 8) and hasattr(tarfile, "data_filter") else "no")' 2> /dev/null)" = autodl-py-ok ]; }
+if [ -n "${AUTODL_PYTHON:-}" ]; then cands=("$AUTODL_PYTHON"); else cands=(python3 python); fi
+for py in "${cands[@]}"; do
+  if ok "$py"; then exec "$py" "$script" "$@"; fi
+done
+echo "autodl ctl: no usable Python (3.8 or later with tarfile.data_filter) among: ${cands[*]}; install one, or point AUTODL_PYTHON at it" >&2
+exit 1

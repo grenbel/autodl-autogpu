@@ -1,0 +1,12 @@
+# Calibration probe of the autodl-gpu skill (@TOKEN@). The container's boot script runs as PID 1 and
+# sources /etc/profile, which sources /etc/profile.d/*.sh. Only there (BASHPID 1, not a subshell of
+# it and not a login shell) does this record the uptime and the time, in a subshell with builtins
+# only, so PID 1's variables, options and directory stay as they were. It never fails and never
+# prints anything; the marker belongs on a tmpfs such as /dev/shm, never on a disk that could stall.
+if [ "${BASHPID:-0}" = 1 ]; then
+    (
+        IFS=' ' read -r up idle < /proc/uptime || exit 0
+        printf '%s %s\n%s\n' "$up" "$idle" "$EPOCHSECONDS" > '@MARKER@'
+    ) > /dev/null 2>&1 || :
+fi
+:

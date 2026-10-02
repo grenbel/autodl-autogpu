@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test stub: `tmux ls` prints $STUB_DIR/tmux_out, or fails like tmux with no server.
+[ "${1:-}" = "ls" ] || exit 1
+if [ -s "$STUB_DIR/tmux_out" ]; then cat "$STUB_DIR/tmux_out"; exit 0; fi
+echo "no server running on /tmp/tmux-0/default" >&2
+exit 1

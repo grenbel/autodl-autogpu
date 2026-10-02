@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Test stub: acts as a GPU when $STUB_DIR/gpu contains 1, otherwise fails like
+# nvidia-smi in AutoDL's non-GPU mode. Utilization comes from $STUB_DIR/util.
+# While $STUB_DIR/hang exists it hangs, like nvidia-smi on a broken driver.
+# Every call is noted in $STUB_DIR/nvsmi_calls, and again with the uptime of the call (the test clock
+# if there is one) in $STUB_DIR/nvsmi_times. While $STUB_DIR/util_seq has lines, each
+# utilization query uses its first line instead of $STUB_DIR/util and removes it: "fail"
+# fails like a driver error, anything else is printed with ";" turned into newlines.
+# While $STUB_DIR/l_fail holds a number N above 0, the next N listings (-L) fail as if the
+# driver were not ready yet, counting it down.
+echo "$*" >> "$STUB_DIR/nvsmi_calls"
+{ read -r up _ < "${AUTODL_TEST_UPTIME:-/proc/uptime}" && echo "$up $*" >> "$STUB_DIR/nvsmi_times"; } 2> /dev/null
+while [ -f "$STUB_DIR/hang" ]; do sleep 0.2; done
+if [ "${1:-}" = -L ] && [ -s "$STUB_DIR/l_fail" ]; then
+  n="$(cat "$STUB_DIR/l_fail")"
+  if [ "$n" -gt 0 ] 2> /dev/null; then
+    echo $((n - 1)) > "$STUB_DIR/l_fail"
+    echo "Failed to initialize NVML: Driver Not Loaded" >&2
+    exit 9
+  fi
+fi
+if [ "$(cat "$STUB_DIR/gpu")" != 1 ]; then
+  echo "Failed to initialize NVML: Insufficient Permissions" >&2
+  exit 9
+fi
+case "${1:-}" in
+  -L) echo "GPU 0: Stub GPU (UUID: GPU-stub)" ;;
+  --query-gpu=utilization.gpu)
+    if [ -s "$STUB_DIR/util_seq" ]; then
+      line="$(head -n 1 "$STUB_DIR/util_seq")"
+      sed -i '1d' "$STUB_DIR/util_seq"
+      if [ "$line" = fail ]; then echo "Unable to determine the device handle" >&2; exit 15; fi
+      printf '%s\n' "$line" | tr ';' '\n'
+    else
+      cat "$STUB_DIR/util"
+    fi
+    ;;
+  *) echo "stub nvidia-smi" ;;
+esac
