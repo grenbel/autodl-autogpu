@@ -17,7 +17,7 @@ It only provides the means. When to power on, in which mode, and when to shut do
 | Needed | Notes |
 |---|---|
 | Claude Code | The CLI, the desktop app or an IDE extension |
-| Python | 3.8 or later with `tarfile.data_filter`, that is 3.8.17, 3.9.17, 3.10.12, 3.11.4, 3.12 or newer |
+| Python | 3.8 or later, with a recent patch release of its branch: 3.8.17, 3.9.17, 3.10.12, 3.11.4, 3.12 or newer. The AI's check of the environment says so when the version is too old |
 | An OpenSSH client | `ssh` on the PATH |
 | bash | On Windows that is Git Bash, the shell of Claude Code's Bash tool |
 | A browser tool | Powering on happens on the AutoDL console web page: the built-in browser of the Claude desktop app, or the Claude in Chrome extension |
@@ -31,62 +31,45 @@ It also works without a browser tool, see "Two levels".
 git clone https://github.com/grenbel/autodl-gpu ~/.claude/skills/autodl-gpu
 ```
 
-Then check the local environment.
-
-```bash
-bash ~/.claude/skills/autodl-gpu/scripts/ctl doctor
-```
-
-It reports, item by item, whether python, bash, ssh, paths with spaces and Chinese characters, the local record and the launcher work. The `python` item names the interpreter the launcher picked and its version; to use another one, point the environment variable `AUTODL_PYTHON` at it.
+You can also send this command to the AI and let it do the installing. After that, start a new conversation and the skill is ready. The first time it is used the AI checks the local environment itself and tells you what is missing.
 
 ## First use
 
-Once per computer.
+There are only three things for you to do. Creating the key, writing the SSH configuration, checking the environment and deploying the guard are done by the AI, following `SKILL.md`.
 
-1. Create an SSH key, for example `ssh-keygen -t ed25519`. Leave the passphrase empty or put the key into ssh-agent: ctl never stops to ask for a passphrase
-2. Add the public key under "设置SSH免密登录" above the instance list in the AutoDL console; it holds for every instance of the account
-3. Give the instance an alias in `~/.ssh/config`; host and port come from the instance's "登录指令", and the password is not needed. You can leave this step to the AI: it only needs the host and the port from you. If you write it yourself, follow the pattern below; the last line must be there, or the first connection fails because the host's key is not known yet
+1. **Add the public key to AutoDL.** The AI gives you one line, a public key, in the conversation; paste it under "设置SSH免密登录" above the instance list in the AutoDL console. Once per computer, and it holds for every instance of the account. If AutoDL already knows a key of yours, just tell the AI which one
+2. **Send the AI the login command.** Copy the instance's "登录指令" in the console and send it; it holds the host and the port. Do not send the password
+3. **Log in to AutoDL in the browser Claude uses.** You log in yourself; the AI does not touch passwords or captchas
 
-   ```
-   Host autodl-demo
-       HostName <host from the login command>
-       Port <port from the login command>
-       User root
-       IdentityFile ~/.ssh/id_ed25519
-       StrictHostKeyChecking accept-new
-   ```
+Then tell the AI which instance the project uses. The first time in each project it settles four things with you.
 
-4. Log in to AutoDL in the browser Claude uses. You log in yourself; the AI does not touch passwords or captchas
-
-Once per project. Tell the AI which instance the project uses; it will settle four things with you.
-
-- The instance: its ID and the SSH alias
+- The instance: which one
 - The use of modes, one of three: non-GPU for moving data and GPU for experiments, GPU only, non-GPU only
 - The budget: whether there is one, how much, in money or in GPU hours, per month or without periods
 - The guard's settings: after how much idle time to shut down (15 minutes is a good start), whether to set a latest shutdown, whether to set a timer in the console
 
-The instance and the guard's settings go into the `## AutoDL` section of the project's CLAUDE.md; the modes and the budget are kept on your machine. Later conversations use them without asking again.
+The AI writes the instance and the guard's settings into the `## AutoDL` section of the project's CLAUDE.md; the modes and the budget are kept on your machine. Later conversations use them without asking again.
 
-The modes and the budget you name are the permission: within them the AI powers on and spends money by itself. The permission has no expiry, is kept per instance on this computer, and holds for conversations in any project. To look at it, have the AI run `ctl auth show`; to change it, state the new range; to take it back, have it run `ctl auth revoke --instance <instance ID>`.
+The modes and the budget you name are the permission: within them the AI powers on and spends money by itself. The permission has no expiry, is kept per instance on this computer, and holds for conversations in any project. To see it, change it or take it back, just tell the AI.
 
 ## Using it
 
-Just say what you want done: "start the training", "shut it down once the data is copied", "how much of this month's budget is left". The AI follows `SKILL.md`: it powers on, deploys the guard, runs the job and shuts down, without narrating each step; you get one line after the power-on and one after the shutdown.
+Just say what you want done: "start the training", "shut it down once the data is copied", "how much of this month's budget is left". The AI follows `SKILL.md`: it powers on, deploys the guard, runs the job and shuts down, without narrating each step; you get one line after the power-on and one after the shutdown. You do not have to click a power-on or a power-off in the console yourself (except without a browser tool, see "Two levels").
 
-The first time an instance is powered on, the guard is not installed yet. The AI first sets a shutdown timer in the console, 30 minutes ahead, and cancels it as soon as the guard is configured. Should the conversation break in those one or two minutes, the platform still shuts the machine down. Seeing that timer appear and disappear in the console is normal.
-
-A console timer can only be cancelled while the AI is there. If a conversation breaks off, or the guard shuts the machine down after the conversation has ended, a timer may still sit on that row. So before you power the instance on by hand, look at its row: cancel or change a timer you find there, or it will shut the machine down when its time comes. What an old timer does whose time passed while the machine was off has not been tested; cancel that one too.
+- **When it does not pick the skill up by itself**, type `/autodl-gpu`, or say "use autodl-gpu"
+- **The AI can act only while the conversation goes on.** Let it wait in the background for the job to end, and it stays in charge until the results are fetched and the machine is shut down. When the conversation is gone (the app closed, the network down), the job runs on and the guard on the instance shuts the machine down once it is idle
+- The first time an instance is powered on you may see a shutdown timer appear and disappear in the console. It is a provisional backstop the AI sets until the guard is installed, and it is normal
 
 ## The guard stays on the instance
 
-The one thing to know once the skill is installed.
+The one thing to know once the skill is installed. The first deployment leaves two things on the instance: the guard script on the data disk (`/root/autodl-tmp/.autodl-guard/`) and a boot hook on the system disk (`/etc/profile.d/autodl-gpu-guard.sh`). From then on the guard starts by itself at every power-on, with the settings of the last time.
 
-- On its first deployment the AI puts the guard script on the data disk, in `/root/autodl-tmp/.autodl-guard/`, and writes a boot hook on the system disk, `/etc/profile.d/autodl-gpu-guard.sh`
-- From then on **it starts by itself at every power-on**, including the ones you do by hand in the console, with the settings of the last time. An open terminal, Jupyter, screen or tmux does not count as use, and very light activity is not seen. So if you power on by hand and only read code without running anything, the machine is shut down once the idle time is over
-- To keep it from shutting down this time, have the AI hold it for a while (`ctl keep`, with a duration)
-- To stop it from starting with the instance, have the AI remove the hook (`ctl autostart <alias> uninstall`). That holds from the next power-on; a guard already running in this one carries on
-- After a system reset or a change of image the system disk is new, so the hook is gone (not tested live; it follows from the disk being replaced). The power-on after that has no guard until the AI deploys it again. So tell the AI when you have done either: it will first set a provisional shutdown timer as a backstop
-- The guard does not know which instance it is on. An image saved from this instance, or a clone of it, that carries both places along will start the guard there as well, with the same settings
+Most of the time this does not concern you. It matters in these cases.
+
+- **When you power on in the console yourself, without the AI** (just to look at some files, say). The guard starts all the same. An open terminal, Jupyter, screen or tmux does not count as use, and very light activity is not seen; so if you only read code without running anything, the machine is shut down once the idle time is over. To keep it up, tell the AI how long to hold it. Also, before you power on, look at the row for a shutdown timer: cancel or change one you find there, or it will shut the machine down when its time comes. A timer the AI has set is cancelled only while the AI is there, so it may still sit on the row after a conversation broke off (what a timer does whose time is long past has not been tested; cancel that one too)
+- **After a system reset or a change of image**, tell the AI the next time you have it power on. The system disk is new then and the hook is most likely gone (not tested live); knowing that, the AI first sets a provisional shutdown timer as a backstop
+- **When you save an image of this instance or clone it.** The guard does not know which instance it is on; if both of these are carried along, it starts there as well, with the same settings
+- **When you do not want it to start with the instance**, have the AI remove the hook. That holds from the next power-on; a guard already running in this one carries on
 
 ## Which of them is a hard limit
 
@@ -113,9 +96,9 @@ The automatic power-on relies on the browser tool's ability to run a script in t
 
 - It does not type passwords, solve captchas or keep tokens, and it does not ask you for a password or the content of a private key
 - It does not click release, reset, change image, resize, migrate, clone, switch to monthly billing, recharge or renew, and it does nothing on the pages for costs and bills. The billing detail it only reads, to check the charges
-- Clicks in the console go only through the fixed functions of `reference/console.js`. When the page does not match the manual it stops and tells you; it does not guess or work around
+- In the console it clicks only a fixed few buttons: power-on, power-on without GPU, setting and cancelling the shutdown timer. When the page is not what it expects it stops and tells you; it does not guess or work around
 - A forced shutdown cuts running jobs off; it is used only when you agree on the spot
-- It does not confirm a power-off in the console. Shutdown goes over SSH; in the rare case that SSH never comes up after a power-on, this version at most opens the power-off confirmation, reads its text and cancels it, and the last click is yours
+- It does not shut down in the console. Shutdown goes over SSH; in the rare case that SSH never comes up after a power-on, it asks you to click the power-off in the console yourself. You may then see the power-off confirmation appear and disappear: that is the AI reading its text
 
 ## Privacy
 
@@ -141,7 +124,7 @@ The instance is an ordinary AutoDL container instance, and the guard needs bash,
 
 ## Tests
 
-There are three suites, each with its own needs. Only all three together are "all tests".
+Using the skill needs no test run. Run them to verify things yourself or when you change the code. There are three suites, each with its own needs. Only all three together are "all tests".
 
 | What is tested | How to run it | Needs |
 |---|---|---|

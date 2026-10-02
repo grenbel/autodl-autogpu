@@ -168,7 +168,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 内置浏览器与 Claude in Chrome 都没有时，关机、守护与跑任务照常自动，开机要用户自己在控制台点，关机收尾里要看控制台的几样也请用户代看。明确告诉用户这台电脑上开机不是自动的，然后照手册第 16 节做：这一行的定时关机请用户照开机流程第 2 步设或取消（临时定时用户不愿设的，说明头一两分钟没有兜底），用户点到确认框为止，你做预算检查、用 `ctl now` 取 T0，用户再点确定，实例起来后先 `log on`。
 
 ## 第一次使用
-- **每台电脑。** 装好后跑 `ctl doctor` 检查本机环境。生成 SSH 密钥，由用户在控制台实例列表上方的"设置SSH免密登录"里加公钥。照 `reference/ssh.md` 在 `~/.ssh/config` 里给实例写别名，主机与端口由用户从登录指令里复制给你，密码不要。用户本人在浏览器里登录 AutoDL
+- **每台电脑。** 装好后跑 `ctl doctor` 检查本机环境。照 `reference/ssh.md` 生成 SSH 密钥，由用户在控制台实例列表上方的"设置SSH免密登录"里加公钥；在 `~/.ssh/config` 里给实例写别名，主机与端口由用户从登录指令里复制给你，密码不要。用户本人在浏览器里登录 AutoDL
 - **每个项目。** 确定"开始时要确定的信息"并写进 `## AutoDL` 段。段里的 data_dir 是数据盘上的工作目录（AutoDL 的数据盘在 `/root/autodl-tmp`），env_setup 是每个任务之前要执行的环境命令，因为非交互的 SSH 不加载 conda 与 CUDA 的路径。第一次跑任务前用一个小任务核实 env_setup 生效，例如 `ctl run <别名> envcheck --cmd 'which python; python -V'`，再 `ctl tail <别名> envcheck`
 
 ```

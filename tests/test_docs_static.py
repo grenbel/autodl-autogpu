@@ -191,7 +191,8 @@ def test_the_first_connection_to_a_new_instance_is_written_down():
     says how an alias is written and how to tell this failure from a dead instance; SKILL.md sends the reader there
     where the alias is written and where a power-on is followed by no connection."""
     ssh_md, skill = _text(SSH_MD), _text(SKILL)
-    for needed in ("StrictHostKeyChecking accept-new", "Host key verification failed",
+    # the README tells a person only what a person must do; making the key and writing the alias is the reader's work
+    for needed in ("ssh-keygen -t ed25519 -N ''", "StrictHostKeyChecking accept-new", "Host key verification failed",
                    "REMOTE HOST IDENTIFICATION HAS CHANGED", "ssh-keygen -R"):
         assert needed in ssh_md, needed
     first_use = skill.split("\n## 第一次使用\n", 1)[1].split("\n- **每个项目。**", 1)[0]
