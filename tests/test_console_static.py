@@ -12,9 +12,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKELETON = ROOT / "tests" / "console" / "skeleton.js"
 CONSOLE = ROOT / "reference" / "console.js"
 
-_spec = importlib.util.spec_from_file_location("fn_digest", ROOT / "tests" / "console" / "fn_digest.py")
-fn_digest = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(fn_digest)
+PASTE = ROOT / "reference" / "console.min.js"   # the copy that is pasted into the page: the code without comments
+
+
+def _load(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "tests" / "console" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+fn_digest = _load("fn_digest")
+paste_copy = _load("paste_copy")
 
 # Entries no page script may name: network, storage, navigation, dynamic code, URL-bearing properties.
 NEVER = [r"\bfetch\b", r"\bXMLHttpRequest\b", r"\bsendBeacon\b", r"\bWebSocket\b", r"\bEventSource\b", r"\bWorker\b",
@@ -126,11 +135,30 @@ def console_names():
     return re.findall(r"'(\w+)'", re.search(r"var NAMES = \[(.*?)\];", code, re.S).group(1))
 
 
+def test_the_copy_that_is_pasted_is_the_script_without_comments_and_indentation():
+    """The AI writes the script out for every new tab, so what it pastes carries no comments. The copy is made from
+    the source and by nothing else: the same code, line for line."""
+    source = CONSOLE.read_bytes().decode("utf-8")
+    copy = PASTE.read_bytes()
+    assert copy.decode("utf-8") == paste_copy.strip(source)
+    assert b"\r" not in copy and not copy.startswith(b"\xef\xbb\xbf") and copy.endswith(b"})\n")
+    assert fn_digest.function_text(copy.decode("utf-8")).startswith("function (mode) {")
+    assert len(copy) < 0.8 * len(source.encode("utf-8"))
+    # what the stripping takes away is comment and indentation only: line by line the code is the same
+    code = [ln.strip() for ln in code_of_text(source).split("\n") if ln.strip()]
+    assert [ln for ln in copy.decode("utf-8").split("\n") if ln] == code
+    for refused in ("var a = `x\n  y`;\n", "/* c */\nvar a = 1;\n", "var a = 'x\\\n  y';\n"):
+        import pytest
+        with pytest.raises(ValueError):
+            paste_copy.strip(refused)
+
+
 def test_manual_names_the_published_script():
     text = MANUAL.read_bytes().decode("utf-8")
-    n, h = fn_digest.digest(CONSOLE)
+    n, h = fn_digest.digest(PASTE)
     version = re.search(r"var VERSION = (\d+);", CONSOLE.read_bytes().decode("utf-8")).group(1)
-    assert f"`reference/console.js` 第 {version} 版（函数文本 {n} 字节，SHA-256 `{h}`）" in text
+    assert f"`reference/console.js` 第 {version} 版" in text
+    assert f"`reference/console.min.js`（函数文本 {n} 字节，SHA-256 `{h}`）" in text
     assert f"if (b.length !== {n} || h !== '{h}') return" in text
     assert f"`version: {version}`" in text
 
@@ -140,14 +168,14 @@ def js_blocks():
 
 
 def test_manual_has_a_full_paste_and_a_short_loader_that_both_check_before_running():
-    """Pasting 44 KB after every reload is slow, so the full paste leaves the checked text in the tab's
+    """Pasting the script after every reload is slow, so the full paste leaves the checked text in the tab's
     sessionStorage and a short loader takes it from there. Neither runs anything it has not checked."""
-    n, h = fn_digest.digest(CONSOLE)
+    n, h = fn_digest.digest(PASTE)
     check = f"if (b.length !== {n} || h !== '{h}') return"
     key = "'__autodl_console_text'"
     full, loader = js_blocks()[:2]
     # the full paste: the text is kept only once it has passed the check, and before the script runs
-    assert full.count(check) == 1 and "/* 这里放 reference/console.js 的全文 */" in full
+    assert full.count(check) == 1 and "/* 这里放 reference/console.min.js 的全文 */" in full
     assert full.index(check) < full.index(f"sessionStorage.setItem({key}, t)") < full.index("var api = fn();")
     # the loader: what was kept is checked again, byte for byte, before it is turned back into the function
     assert loader.count(check) == 1 and "这里放" not in loader
@@ -160,7 +188,8 @@ def test_manual_has_a_full_paste_and_a_short_loader_that_both_check_before_runni
 
 
 def test_manual_calls_every_function_of_the_script_and_no_other():
-    text = MANUAL.read_bytes().decode("utf-8")
+    # the manual is two files: reference/console-more.md holds the sections that are seldom needed
+    text = MANUAL.read_bytes().decode("utf-8") + (MANUAL.parent / "console-more.md").read_bytes().decode("utf-8")
     names = console_names()
     called = set(re.findall(r"`(?:window\.__autodl\.)?(\w+)\(", text))
     assert len(names) == 23

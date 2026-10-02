@@ -15,7 +15,11 @@ import autodl_ctl as ctl  # noqa: E402
 
 SKILL = ROOT / "SKILL.md"
 CONSOLE_MD = ROOT / "reference" / "console.md"
-SSH_MD = ROOT / "reference" / "ssh.md"
+CONSOLE_MORE_MD = ROOT / "reference" / "console-more.md"   # the four sections of the manual that are seldom needed
+SSH_MD = ROOT / "reference" / "ssh.md"                     # ctl: connecting, the commands, the alias
+GUARD_MD = ROOT / "reference" / "guard.md"                 # the guard on the instance
+LEDGER_MD = ROOT / "reference" / "ledger.md"               # the local record: grants, the ledger, calibration
+REFERENCES = [CONSOLE_MD, CONSOLE_MORE_MD, SSH_MD, GUARD_MD, LEDGER_MD]
 
 
 def _text(path: pathlib.Path) -> str:
@@ -132,15 +136,50 @@ def test_skill_names_only_ctl_commands_and_options_that_exist():
 
 def test_console_manual_names_only_ctl_commands_and_options_that_exist():
     assert _problems(CONSOLE_MD, bare=True) == []
+    assert _problems(CONSOLE_MORE_MD, bare=True) == []
 
 
-def test_ssh_reference_names_only_ctl_commands_and_options_that_exist():
-    # this file also describes the guard's own commands, whose options differ; only spans that say ctl are checked
-    assert _problems(SSH_MD, bare=False) == []
+def test_the_other_references_name_only_ctl_commands_and_options_that_exist():
+    # these files also describe the guard's own commands, whose options differ; only spans that say ctl are checked
+    for path in (SSH_MD, GUARD_MD, LEDGER_MD):
+        assert _problems(path, bare=False) == []
+
+
+def _headings(path: pathlib.Path) -> set:
+    return set(re.findall(r"^#{2,3} (.+)$", _text(path), re.M))
+
+
+def test_every_pointer_between_the_documents_finds_its_target():
+    """The reference is several files, so that only the part that is needed gets read. A pointer names the file and,
+    in quotes, the section; a section named without a file is one of the same file."""
+    docs = [SKILL] + REFERENCES
+    bad = []
+    for doc in docs:
+        text = _text(doc)
+        for name in re.findall(r"reference/[\w.-]+\.(?:md|js)", text):
+            if not (ROOT / name).is_file():
+                bad.append(f"{doc.name}: no file {name}")
+        for m in re.finditer(r"`reference/([\w.-]+\.md)` 的\"([^\"\n]+)\"", text):
+            target = ROOT / "reference" / m.group(1)
+            if target.is_file() and m.group(2) not in _headings(target):
+                bad.append(f"{doc.name}: {m.group(1)} has no section {m.group(2)!r}")
+    # the three files that were one: a quoted name of a section of another of them must come with that file's name
+    three = {p: _headings(p) for p in (SSH_MD, GUARD_MD, LEDGER_MD)}
+    for doc, own in three.items():
+        text = _text(doc)
+        for other, theirs in three.items():
+            for name in theirs - own:
+                for m in re.finditer(re.escape(f"\"{name}\""), text):
+                    if not text[:m.start()].endswith(f"`reference/{other.name}` 的"):
+                        bad.append(f"{doc.name}: \"{name}\" is a section of {other.name}, and the file is not named")
+    assert bad == [], bad
+    for path in REFERENCES:                         # each is read in one go (the Read tool returns 25k tokens at most)
+        assert len(path.read_bytes()) <= 45000, path.name
+    assert not three[SSH_MD] & three[GUARD_MD] and not three[SSH_MD] & three[LEDGER_MD] and not three[GUARD_MD] & three[LEDGER_MD]
 
 
 def test_skill_has_the_sections_the_console_manual_points_to():
-    manual, skill = _text(CONSOLE_MD), _text(SKILL)
+    manual, skill = _text(CONSOLE_MD) + _text(CONSOLE_MORE_MD), _text(SKILL)
     assert "SKILL.md 的开机流程" in manual and "SKILL.md 的出错处理" in manual and "调用方式见 SKILL.md" in manual
     heads = re.findall(r"^## (.+)$", skill, re.M)
     assert "开机流程" in heads and "出错处理" in heads and any("调用" in h for h in heads), heads
@@ -154,8 +193,16 @@ MANUAL_SECTIONS = {1: "基本规则", 2: "每次用控制台之前", 3: "调用�
                    17: "接手已经开着的实例"}
 
 
+MOVED_SECTIONS = [13, 15, 16, 17]        # in reference/console-more.md, with their numbers kept
+
+
 def test_skill_points_only_to_manual_sections_that_exist():
-    heads = dict((int(n), title) for n, title in re.findall(r"^## (\d+)\. (.+)$", _text(CONSOLE_MD), re.M))
+    main = dict((int(n), title) for n, title in re.findall(r"^## (\d+)\. (.+)$", _text(CONSOLE_MD), re.M))
+    more = dict((int(n), title) for n, title in re.findall(r"^## (\d+)\. (.+)$", _text(CONSOLE_MORE_MD), re.M))
+    assert sorted(more) == MOVED_SECTIONS and not set(main) & set(more)
+    where = "第 13、15、16、17 节在 `reference/console-more.md`"      # said where the manual is introduced, in both
+    assert where in _text(SKILL) and "`reference/console-more.md`" in _text(CONSOLE_MD).split("\n## 1. ")[0]
+    heads = {**main, **more}
     assert sorted(heads) == list(range(1, len(heads) + 1))
     assert sorted(heads) == sorted(MANUAL_SECTIONS)
     for n, word in MANUAL_SECTIONS.items():
@@ -176,8 +223,10 @@ def test_skill_front_matter_and_length():
     # tool returns 25k at most). It was 30000 until the phase 7 review added the timer before a power-on, the budget
     # baselines and exit 13: things to know before acting, which is why they are not left to the reference files.
     # 35000 until the description named automated experiment runs and the project section named the skill: both
-    # decide whether the skill is found at all, so they cannot move to a reference file either
-    assert len(skill.encode("utf-8")) <= 36000 and skill.count("\n") <= 220
+    # decide whether the skill is found at all, so they cannot move to a reference file either. 36000 until the
+    # reference was split into five files and a first reader of them was asked twelve situations: three pointers
+    # now name the section and not only the file, and an alias the user wrote is looked at before the power-on
+    assert len(skill.encode("utf-8")) <= 36500 and skill.count("\n") <= 220
     assert "\r" not in skill and skill.endswith("\n")
 
 
@@ -214,6 +263,32 @@ def test_the_first_connection_to_a_new_instance_is_written_down():
                    "REMOTE HOST IDENTIFICATION HAS CHANGED", "ssh-keygen -R"):
         assert needed in ssh_md, needed
     first_use = skill.split("\n## 第一次使用\n", 1)[1].split("\n- **每个项目。**", 1)[0]
-    assert "照 `reference/ssh.md`" in first_use, first_use
+    section = '照 `reference/ssh.md` 的"别名的写法与第一次连接"'
+    assert section in first_use, first_use
+    # an alias the user wrote earlier is looked at before the power-on: after it, the instance is billed while the
+    # reason for the silence is looked for (a reader of the released files found no way to this check before that)
+    assert "别名是用户早先写的" in first_use and "头一次开机前" in first_use and "主机密钥设置" in first_use, first_use
     rows = [line for line in skill.splitlines() if line.startswith("| 开机后 `ctl wait` 一直等不到")]
-    assert len(rows) == 1 and "`reference/ssh.md`" in rows[0], rows
+    assert len(rows) == 1 and section in rows[0], rows
+
+
+def test_what_a_first_reader_of_the_five_files_missed_has_its_pointer():
+    """A reader who had never seen the skill answered twelve situations from the released files (2026-10-02). The split
+    sent it to no wrong file. These are the places where it had to look around: a file named without the section, a
+    word of the manual in a file that did not say what the manual is, and two answers that sat in a neighbouring
+    section."""
+    skill, ledger, guard, manual = _text(SKILL), _text(LEDGER_MD), _text(GUARD_MD), _text(CONSOLE_MD)
+    clock = [line for line in skill.splitlines() if line.startswith("| 退出 11，说本机时钟比记录里的早")]
+    assert len(clock) == 1 and '`reference/ledger.md` 的"授权、开机前的关口与账本"' in clock[0], clock
+    # the ledger file cites the manual by section number, so it says which files the manual is
+    head = ledger.split("\n## ", 1)[0]
+    assert '"手册"是 `reference/console.md`' in head and "`reference/console-more.md`" in head, head
+    # forgetting the calibrations is done in the local record: it needs no running instance
+    forget = [line for line in ledger.splitlines() if "`calibrate 别名 --forget`" in line]
+    assert len(forget) == 1 and "不连实例" in forget[0], forget
+    # the keys of status are one section; from when the idle time counts after a keep is another
+    status = [line for line in guard.splitlines() if line.startswith("- status 一行一个 `key=value`")]
+    assert len(status) == 1 and '见"keep、最晚关机、跑完就关、安静期"' in status[0], status
+    # which menu item stops a power-on without GPU; the list of the others is kept for reference only
+    step = [line for line in manual.splitlines() if line.startswith("1. `menu('实例ID')`")]
+    assert len(step) == 1 and '第一项不是"无卡模式开机"也停下' in step[0] and "第 15 节" in step[0], step

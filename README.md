@@ -140,12 +140,13 @@ pytest ends by reminding you of the other two. The guard's tests replace screen,
 | Path | What it is |
 |---|---|
 | `SKILL.md` | what the AI reads first: the flow, the rules, what to do when something goes wrong |
-| `reference/console.md`, `reference/console.js` | the manual for the console and the page script that does the clicking |
-| `reference/ssh.md` | how the guard and ctl work, with every command and exit code |
+| `reference/console.md`, `reference/console-more.md` | the manual for the console; the second file holds the four sections that are seldom needed |
+| `reference/console.js`, `reference/console.min.js` | the page script that does the clicking, and the copy without comments that is pasted into the page |
+| `reference/ssh.md`, `reference/guard.md`, `reference/ledger.md` | how ctl connects and its commands; how the guard decides; the local record with grants, the ledger and calibration |
 | `scripts/` | `ctl` (the launcher), `autodl_ctl.py` (the helper on your computer), `autodl_guard.sh` (the guard that runs on the instance) |
 | `tests/`, `dev/analyze_samples.py` | the three test suites, and a tool that summarises the guard's samples |
 
-Using the skill needs only the first four rows.
+Using the skill needs every row but the last. The AI reads `SKILL.md` each time and the reference files only as far as the task at hand needs them.
 
 ## License
 

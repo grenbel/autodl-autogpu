@@ -140,12 +140,13 @@ pytest 跑完会提醒还有后两组。守护脚本的测试用桩程序代替 
 | 路径 | 是什么 |
 |---|---|
 | `SKILL.md` | AI 先读的那一份：流程、规矩、出错时怎么办 |
-| `reference/console.md`、`reference/console.js` | 控制台的操作手册，和负责点击的页面脚本 |
-| `reference/ssh.md` | 守护脚本与 ctl 怎么工作，全部命令与退出码 |
+| `reference/console.md`、`reference/console-more.md` | 控制台的操作手册，少用的四节在第二个文件里 |
+| `reference/console.js`、`reference/console.min.js` | 负责点击的页面脚本，以及贴进页面用的去掉注释的那一份 |
+| `reference/ssh.md`、`reference/guard.md`、`reference/ledger.md` | ctl 怎么连接与全部命令，守护怎么判断，本机记录里的授权、账本与校准 |
 | `scripts/` | `ctl`（启动器）、`autodl_ctl.py`（本机助手）、`autodl_guard.sh`（跑在实例上的守护脚本） |
 | `tests/`、`dev/analyze_samples.py` | 三组测试，以及汇总守护采样结果的工具 |
 
-只是使用的话，用得到的是前四行。
+只是使用的话，用得到的是除最后一行以外的各行。AI 每次都读 `SKILL.md`，参考文件只读手头这件事用得上的部分。
 
 ## 许可证
 

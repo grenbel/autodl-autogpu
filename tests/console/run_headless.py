@@ -2,13 +2,14 @@
 
   python tests/console/run_headless.py [--browser PATH] [--console PATH]
 
-Headless Edge or Chrome loads copies of fixtures.js and run.js and the text of reference/console.js from a temporary
-directory, calls __con.runSource(text) and prints the page; the result is read from it. The test runs twice: with the
-page focused, and with document.hasFocus() answering false, as in a browser pane that is hidden (the script then sends
-the focus event itself). The browser gets an empty profile in the temporary directory, and the page allows no network
-(its CSP is default-src 'none').
+Headless Edge or Chrome loads copies of fixtures.js and run.js and the text of the page script from a temporary
+directory, calls __con.runSource(text) and prints the page; the result is read from it. Two files are tested unless
+--console names one: reference/console.js, and reference/console.min.js, the copy without comments that is pasted into
+the real page. Each runs twice: with the page focused, and with document.hasFocus() answering false, as in a browser
+pane that is hidden (the script then sends the focus event itself). The browser gets an empty profile in the temporary
+directory, and the page allows no network (its CSP is default-src 'none').
 
-Exit 0 when both runs pass, 1 when a check fails, 2 when no browser was found or the page gave no result.
+Exit 0 when every run passes, 1 when a check fails, 2 when no browser was found or the page gave no result.
 The browser is --browser, or the environment variable AUTODL_TEST_BROWSER, or the first one found in the usual places."""
 import html
 import json
@@ -113,25 +114,29 @@ def main(argv):
     if browser is None or not browser.is_file():
         print("no Edge or Chrome found; name one with --browser PATH or AUTODL_TEST_BROWSER")
         return 2
-    console = pathlib.Path(given.get("--console") or ROOT / "reference" / "console.js")
+    if "--console" in given:
+        consoles = [pathlib.Path(given["--console"])]
+    else:
+        consoles = [ROOT / "reference" / "console.js", ROOT / "reference" / "console.min.js"]
     print("browser:", browser)
     worst = 0
-    for no_focus in (False, True):
-        out, why = run_once(browser, console, no_focus)
-        mode = "no focus, as in a hidden pane" if no_focus else "the page has focus"
-        if out is None:
-            print("[%s] %s" % (mode, why))
-            worst = max(worst, 2)
-            continue
-        failed = out.get("failed") or []
-        print("[%s] pass: %s, checks: %s, failed: %d, digest: %s" % (mode, out.get("pass"), out.get("total"), len(failed),
-                                                                  json.dumps(out.get("digest"))))
-        if out.get("error"):
-            print("  error:", out["error"])
-        for f in failed:
-            print("  - %s :: %s" % (f.get("name"), str(f.get("detail"))[:400]))
-        if out.get("pass") is not True:
-            worst = max(worst, 1)
+    for console in consoles:
+        for no_focus in (False, True):
+            out, why = run_once(browser, console, no_focus)
+            mode = "%s; %s" % (console.name, "no focus, as in a hidden pane" if no_focus else "the page has focus")
+            if out is None:
+                print("[%s] %s" % (mode, why))
+                worst = max(worst, 2)
+                continue
+            failed = out.get("failed") or []
+            print("[%s] pass: %s, checks: %s, failed: %d, digest: %s" % (mode, out.get("pass"), out.get("total"),
+                                                                      len(failed), json.dumps(out.get("digest"))))
+            if out.get("error"):
+                print("  error:", out["error"])
+            for f in failed:
+                print("  - %s :: %s" % (f.get("name"), str(f.get("detail"))[:400]))
+            if out.get("pass") is not True:
+                worst = max(worst, 1)
     return worst
 
 
