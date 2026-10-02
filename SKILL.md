@@ -84,7 +84,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 5. **记账。** 结算为 `confirmed` 之后立刻 `ctl log on --instance <实例ID> --req <请求号> --at <T0> --field mode=gpu --field price=<单价> --field gpus=<卡数>`，无卡写 `mode=nogpu`、`gpus=0`。它只用实例 ID，排在一切可能失败的步骤之前，后面哪一步出错，这次开机都已在账上。它的各种结果怎么办，以及预留什么时候释放、什么时候保留，都在手册第 10 节。退出 11（本机记录坏了）也照样往下做，告诉用户，修好后用同一个 T0 与字段重发
 6. **再看一次这一行的定时关机。** 它应是第 2 步留下的样子：用户选的时刻，临时的时刻，或者没有。不是就弄对，该有而没设上的这时补设（用户选的补到服务器时间加上这次开机剩下的时长，临时的仍是 30 分钟后，手册第 8 节），多出来的取消
 7. **等实例起来并认准它。** `ctl wait <别名> --mode gpu`（无卡 `--mode nogpu`），再 `ctl check <别名> --instance <实例ID>`。主机名对不上，说明别名指向了别的实例。立即停下，不 deploy、不 arm、不跑任何东西，也不自己换别的别名接着做；告诉用户这次开机仍在计费，由用户决定怎么处理。账在第 5 步已经记了；别名弄对之前，它关没关只看控制台的 `row`，不对这个别名 `ctl wait`。用户指明了正确的别名，就对它再 `ctl check`，对上了从这一步接着往下做。等不到或模式不符见"出错处理"
-8. **部署、看状态、arm。** `ctl deploy <别名>`，`ctl status <别名>`，再 `ctl arm <别名> --idle <空闲时长> --env-setup '<env_setup>'`，用户设了最晚关机就加 `--deadline <时长>`（"每次开机最多 N 小时"在新开的机上直接给 N；给的是钟点时换算成从现在起的时长）。先 deploy：新实例上还没有守护，status 只会报没部署。随开机自启配的那次（`armed_by=boot`）由你的 arm 直接替换。deploy 退出非 0 而输出里 `deployed` 为 true 时守护已就位，照样 arm，再看是哪一项没成：`autostart` 是 failed、not sent 或 uncertain，是自启没装上，告诉用户下次开机到 arm 之间没有守护，之后可以 `ctl autostart <别名> install`；`autostart` 是 installed 而 `calibration_forget` 报错，是旧校准没清掉，本机记录修好后 `ctl calibrate <别名> --forget`。arm 成功之后，第 2 步设的若是临时定时，取消它并确认这一行没有定时关机；取消不成，把它的时刻告诉用户，在那之前不启动会跑过它的任务。arm 说没有校准时见"跑任务"的校准
+8. **部署、看状态、arm。** `ctl deploy <别名>`，`ctl status <别名>`，再 `ctl arm <别名> --idle <空闲时长> --env-setup '<env_setup>'`，用户设了最晚关机就加 `--deadline <时长>`（"每次开机最多 N 小时"在新开的机上直接给 N；给的是钟点时换算成从现在起的时长）。先 deploy：新实例上还没有守护，status 只会报没部署。随开机自启配的那次（`armed_by=boot`）由你的 arm 直接替换。deploy 退出非 0 而输出里 `deployed` 为 true 时守护已就位，照样 arm，再看是哪一项没成：`autostart` 是 failed、not sent 或 uncertain，是自启没装上，告诉用户下次开机到 arm 之间没有守护，之后可以 `ctl autostart <别名> install`；`autostart` 是 installed 而 `calibration_forget` 报错，是旧校准没清掉，本机记录修好后 `ctl calibrate <别名> --forget`。arm 成功之后，第 2 步设的若是临时定时，取消它并确认这一行没有定时关机；取消不成，把它的时刻告诉用户，在那之前不启动会跑过它的任务
 9. **汇报**（见"汇报"），然后用 `ctl run` 干活
 
 ## 接手已经开着的实例
@@ -150,7 +150,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 | 出现登录页、登录过期、验证码 | 请用户本人在浏览器里登录，不代输。实例保持关机，登录后从头来 |
 | 页面脚本拒绝，或按钮、确认框原文、页面结构与手册对不上 | 照手册第 14 节停下，把原因或原文告诉用户，控制台可能改版了 |
 | 最终确认的调用没有返回，或结算一直是 pending、uncertain | 不再点。照手册第 9 节查明，查明之前预留先保留 |
-| 开机后 `ctl wait` 一直等不到，SSH 始终不通 | 在控制台关机（手册第 13 节，这一版要请用户本人点）。开机的账已在第 5 步记了，关机后照常收尾，告诉用户 |
+| 开机后 `ctl wait` 一直等不到，SSH 始终不通 | 先照 `reference/ssh.md` 查别名与主机密钥；修不好才在控制台关机（手册第 13 节，这一版要请用户本人点）。开机的账已在第 5 步记了，关机后照常收尾，告诉用户 |
 | 开机后连得上，但模式不符 | 先 `ctl check <别名> --instance <实例ID>` 认准它，再 `ctl off-now <别名> --reason '<理由>'` 关机；没有守护脚本、或守护进程起不来时改用 `ctl off-raw`（参数相同）。关机后照常收尾，告诉用户；账本里这次按原来要开的模式记，只会多算 |
 | `ctl off-raw` 退出 3 | 没有关。它查到 screen、tmux 会话或登记的任务，或当场采样看到还在用、说不清（逐行列出，如 `cpu:busy` 是没登记的东西在跑）。列的是 `screen` 而 `ctl status` 里 `daemon_alive=1`，是守护进程自己的会话，改用 `ctl off-now`。其余不加 `--force`（只在用户当场同意时用），把它列的告诉用户，由用户决定。过一阵可以原样重发，每次都重新查 |
 | 开机后 deploy 或 arm 不成 | 按退出码重发。仍不成，这次开机没有守护兜底：不跑任务，告诉用户；这次是你开的机、用户没有别的指示，就照"模式不符"一行关机并收尾。接手的实例不自动关，由用户决定 |
@@ -168,7 +168,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 内置浏览器与 Claude in Chrome 都没有时，关机、守护与跑任务照常自动，开机要用户自己在控制台点，关机收尾里要看控制台的几样也请用户代看。明确告诉用户这台电脑上开机不是自动的，然后照手册第 16 节做：这一行的定时关机请用户照开机流程第 2 步设或取消（临时定时用户不愿设的，说明头一两分钟没有兜底），用户点到确认框为止，你做预算检查、用 `ctl now` 取 T0，用户再点确定，实例起来后先 `log on`。
 
 ## 第一次使用
-- **每台电脑。** 装好后跑 `ctl doctor` 检查本机环境。生成 SSH 密钥，由用户在控制台实例列表上方的"设置SSH免密登录"里加公钥。在 `~/.ssh/config` 里给实例写别名，主机与端口由用户从登录指令里复制给你，密码不要。用户本人在浏览器里登录 AutoDL
+- **每台电脑。** 装好后跑 `ctl doctor` 检查本机环境。生成 SSH 密钥，由用户在控制台实例列表上方的"设置SSH免密登录"里加公钥。照 `reference/ssh.md` 在 `~/.ssh/config` 里给实例写别名，主机与端口由用户从登录指令里复制给你，密码不要。用户本人在浏览器里登录 AutoDL
 - **每个项目。** 确定"开始时要确定的信息"并写进 `## AutoDL` 段。段里的 data_dir 是数据盘上的工作目录（AutoDL 的数据盘在 `/root/autodl-tmp`），env_setup 是每个任务之前要执行的环境命令，因为非交互的 SSH 不加载 conda 与 CUDA 的路径。第一次跑任务前用一个小任务核实 env_setup 生效，例如 `ctl run <别名> envcheck --cmd 'which python; python -V'`，再 `ctl tail <别名> envcheck`
 
 ```
@@ -199,5 +199,5 @@ description: Use when work in any project needs an AutoDL instance powered on or
 | 关机后直接 `log off` | 时刻取收支明细最后一笔，再导入扣费 |
 
 ## 细节在哪
-- `reference/console.md` 是控制台的每一步，有页面脚本的用法、确认与结算、预算的预留、读扣费、接手，以及没有浏览器工具时的做法
-- `reference/ssh.md` 是守护的判定次序、信号与阈值、安静期、off-now、随开机自启，以及 ctl 的全部命令与退出码、本机记录、授权与账本、校准
+- `reference/console.md` 是控制台的每一步，有页面脚本的用法、确认与结算、预留、读扣费、接手、没有浏览器工具时的做法
+- `reference/ssh.md` 是守护的判定次序、信号与阈值、安静期、off-now、随开机自启、ctl 的全部命令与退出码、本机记录、授权与账本、校准

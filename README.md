@@ -45,7 +45,17 @@ Once per computer.
 
 1. Create an SSH key, for example `ssh-keygen -t ed25519`. Leave the passphrase empty or put the key into ssh-agent: ctl never stops to ask for a passphrase
 2. Add the public key under "设置SSH免密登录" above the instance list in the AutoDL console; it holds for every instance of the account
-3. Give the instance an alias in `~/.ssh/config`; host and port come from the instance's "登录指令". The password is not needed
+3. Give the instance an alias in `~/.ssh/config`; host and port come from the instance's "登录指令", and the password is not needed. You can leave this step to the AI: it only needs the host and the port from you. If you write it yourself, follow the pattern below; the last line must be there, or the first connection fails because the host's key is not known yet
+
+   ```
+   Host autodl-demo
+       HostName <host from the login command>
+       Port <port from the login command>
+       User root
+       IdentityFile ~/.ssh/id_ed25519
+       StrictHostKeyChecking accept-new
+   ```
+
 4. Log in to AutoDL in the browser Claude uses. You log in yourself; the AI does not touch passwords or captchas
 
 Once per project. Tell the AI which instance the project uses; it will settle four things with you.

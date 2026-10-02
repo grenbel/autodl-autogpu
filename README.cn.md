@@ -45,7 +45,17 @@ bash ~/.claude/skills/autodl-gpu/scripts/ctl doctor
 
 1. 生成 SSH 密钥，例如 `ssh-keygen -t ed25519`。口令留空，或者把密钥加进 ssh-agent，因为 ctl 连接时不会停下来问口令
 2. 在 AutoDL 控制台实例列表上方的"设置SSH免密登录"里加上公钥，它对账号下所有实例生效
-3. 在 `~/.ssh/config` 里给实例写一个别名，主机和端口从实例的"登录指令"里复制。密码用不到
+3. 在 `~/.ssh/config` 里给实例写一个别名，主机和端口从实例的"登录指令"里复制，密码用不到。这一步可以交给 AI，你只要把主机和端口给它。自己写的话照下面的样子，最后一行不能少，否则第一次连接会因为还不认识这台主机的密钥而失败
+
+   ```
+   Host autodl-demo
+       HostName <登录指令里的主机>
+       Port <登录指令里的端口>
+       User root
+       IdentityFile ~/.ssh/id_ed25519
+       StrictHostKeyChecking accept-new
+   ```
+
 4. 在 Claude 用的浏览器里登录 AutoDL。登录由你本人完成，AI 不碰密码与验证码
 
 每个项目做一次。告诉 AI 这个项目要用哪台实例，它会问清四样东西。

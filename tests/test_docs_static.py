@@ -183,3 +183,18 @@ def test_skill_does_not_bring_back_the_rules_of_the_first_version():
     skill = _text(SKILL)
     for gone in ("封顶", "合计时长上限", "log consent", "gpu_limit", "0.7"):
         assert gone not in skill, gone
+
+
+def test_the_first_connection_to_a_new_instance_is_written_down():
+    """ctl connects in batch mode, so ssh cannot ask whether to trust a host it has not seen: an alias without
+    accept-new fails before the login, and `wait` and `check` only say that they did not get through. The reference
+    says how an alias is written and how to tell this failure from a dead instance; SKILL.md sends the reader there
+    where the alias is written and where a power-on is followed by no connection."""
+    ssh_md, skill = _text(SSH_MD), _text(SKILL)
+    for needed in ("StrictHostKeyChecking accept-new", "Host key verification failed",
+                   "REMOTE HOST IDENTIFICATION HAS CHANGED", "ssh-keygen -R"):
+        assert needed in ssh_md, needed
+    first_use = skill.split("\n## 第一次使用\n", 1)[1].split("\n- **每个项目。**", 1)[0]
+    assert "照 `reference/ssh.md`" in first_use, first_use
+    rows = [line for line in skill.splitlines() if line.startswith("| 开机后 `ctl wait` 一直等不到")]
+    assert len(rows) == 1 and "`reference/ssh.md`" in rows[0], rows
