@@ -4,8 +4,10 @@
 //   1. paste tests/console/fixtures.js, then this file;
 //   2. __con.trapsOn(); var fn = <the text of reference/console.js, pasted as code>;
 //   3. await __con.run(fn)
-// run() returns one JSON string: {pass, digest: {bytes, sha256}, csp, total, failed: [{name, ok, detail}]}. The digest is
-// of fn.toString(); compare it with: python tests/console/fn_digest.py reference/console.js
+// run() returns one JSON string: {pass, digest: {bytes, sha256}, csp, clone, total, failed: [{name, ok, detail}]}. The
+// digest is of fn.toString(); compare it with: python tests/console/fn_digest.py reference/console.js
+// clone says which copy was tested: true for the source and for reference/console-clone.min.js, which have the functions
+// for cloning an instance and run the tests of those as well; false for the everyday copy reference/console.min.js.
 // While the script under test runs, network, storage, navigation and dynamic code are trapped, and DOM-writing entries
 // are trapped unless the fixture's own handlers are running; DOM changes outside those handlers are reported too. Every
 // click, focus and event the script makes is logged with its element and compared with what that call should do.
@@ -106,10 +108,10 @@ window.__con = (function () {
      [HTMLInputElement, ['formAction']], [HTMLButtonElement, ['formAction']], [HTMLObjectElement, ['data']],
      [HTMLEmbedElement, ['src']], [HTMLTextAreaElement, ['value']], [HTMLSelectElement, ['value']]]
       .forEach(function (pair) { pair[1].forEach(function (n) { accessor(pair[0].prototype, n, pair[0].name + '.' + n); }); });
-    // The effects the script may have: click a button or a menu item, focus an input without scrolling (and send it a
-    // focus event once it is the active element), and send mouseenter or mouseleave to a menu trigger. Anything else
-    // through these entries is a hit. Each effect let through is logged with its element, and attempt() compares the log
-    // with the effects the call should have had.
+    // The effects the script may have: click a button, a menu item or the label of a checkbox in a dialog, focus an input
+    // without scrolling (and send it a focus event once it is the active element), and send mouseenter or mouseleave to
+    // a menu trigger. Anything else through these entries is a hit. Each effect let through is logged with its element,
+    // and attempt() compares the log with the effects the call should have had.
     function only(obj, name, label, allow, kind) {
       try {
         var own = Object.getOwnPropertyDescriptor(obj, name);
@@ -123,9 +125,11 @@ window.__con = (function () {
         undo.push(function () { if (own) Object.defineProperty(obj, name, own); else delete obj[name]; });
       } catch (e) { hits.push('could not trap ' + label); }
     }
-    only(HTMLElement.prototype, 'click', 'click on something other than a button or a menu item', function (el) {
-      return el.tagName === 'BUTTON' || (el.tagName === 'LI' && el.classList.contains('el-dropdown-menu__item'));
-    }, function () { return 'click'; });
+    only(HTMLElement.prototype, 'click', 'click on something other than a button, a menu item or a checkbox label in a dialog',
+      function (el) {
+        return el.tagName === 'BUTTON' || (el.tagName === 'LI' && el.classList.contains('el-dropdown-menu__item')) ||
+               (el.tagName === 'LABEL' && el.classList.contains('el-checkbox') && !!el.closest('.el-dialog'));
+      }, function () { return 'click'; });
     only(HTMLElement.prototype, 'focus', 'focus on something other than an input, or without preventScroll', function (el, a) {
       return el.tagName === 'INPUT' && !!a[0] && a[0].preventScroll === true;
     }, function () { return 'focus'; });
@@ -199,6 +203,9 @@ window.__con = (function () {
       case 'focusTimerInput': return focus('picker:' + (c.args[1] === 'date' ? '选择日期' : '选择时间'));
       case 'confirmTimerPicker': return ['click picker:确定'];
       case 'confirmTimerDialog': return ['click dialog:确定'];
+      case 'startClone': return ['click ' + k + ':menu:克隆实例新'];
+      case 'tickCloneDataDisk': return ['click clone:数据盘'];
+      case 'continueClone': return ['click clone:继续'];
       default: return [];
     }
   }
@@ -249,7 +256,7 @@ window.__con = (function () {
     delete window.__autodl;
     return wrap(call('make the api', function () { return make('offline-test'); }));
   }
-  var ITEMS = ['无卡模式开机', '更换镜像', '保存镜像', '升降配置', '扩容数据盘', '缩容数据盘', '转包年包月', '克隆实例',
+  var ITEMS = ['无卡模式开机', '更换镜像', '保存镜像', '升降配置', '扩容数据盘', '缩容数据盘', '转包年包月', '克隆实例新',
                '跨实例拷贝数据', '修改SSH密码', '重置系统', '释放实例'];
   var ROW = ['ok', 'id', 'state', 'mode', 'gpuFree', 'gpuIdle', 'timer', 'release', 'spec', 'gpus', 'buttons'];
   function res(name, f) { return pick(call(name, f), ['result']); }
@@ -257,9 +264,9 @@ window.__con = (function () {
   function reads() {
     __fx.mount(std());
     var api = newApi();
-    eq('version', String(api && api.version), '7');
+    eq('version', String(api && api.version), '9');
     eq('the script registers itself', pick(window.__autodl, ['brand', 'version', 'mode']),
-       JSON.stringify({ brand: 'autodl-gpu console.js', version: 7, mode: 'offline-test' }));
+       JSON.stringify({ brand: 'autodl-gpu console.js', version: 9, mode: 'offline-test' }));
     eq('page() on the list', pick(call('page', function () { return api.page(); }), ['list', 'login']),
        '{"list":true,"login":false}');
     eq('row(A)', pick(call('row(A)', function () { return api.row(A); }), ROW), JSON.stringify({ ok: true, id: A,
@@ -274,8 +281,13 @@ window.__con = (function () {
     eq('row(E)', pick(call('row(E)', function () { return api.row(E); }), ROW), JSON.stringify({ ok: true, id: E,
        state: '已关机', mode: null, gpuFree: false, gpuIdle: '1/8', timer: '2026-10-02 01:00:00', release: null, spec: 'RTX 0000 * 1卡',
        gpus: 1, buttons: ['修改', '关闭', '开机', '更多'] }));
+    // where a row is, as its first cell shows it (the region and the host): what a user can find the row by
+    eq('row(A) tells its place', pick(call('row(A) place', function () { return api.row(A); }), ['place']),
+       '{"place":"测试乙区 / 123机"}');
     var all = call('rows()', function () { return api.rows(); }) || [];
     eq('rows() lists every row', JSON.stringify(all.map(function (r) { return r.id; })), JSON.stringify([A, B, C, D, E]));
+    eq('rows() tells every row\'s place', JSON.stringify(all.map(function (r) { return r.place; })),
+       JSON.stringify([A, B, C, D, E].map(function () { return '测试乙区 / 123机'; })));
     var snap = call('snapshot()', function () { return api.snapshot(); }) || [{}];
     eq('snapshot() holds the stable fields only', JSON.stringify(Object.keys(snap[0])), '["id","state","mode","timer","buttons"]');
     isRefused('row(not an id)', call('row(nope)', function () { return api.row('nope'); }), /instance ID/);
@@ -327,6 +339,12 @@ window.__con = (function () {
     api = newApi();
     eq('without a 规格详情 header the row still reads', pick(call('row(A) without the spec column', function () { return api.row(A); }),
        ['ok', 'spec', 'gpus', 'gpuIdle']), JSON.stringify({ ok: true, spec: null, gpus: null, gpuIdle: '1/8' }));
+    __fx.mount({ rows: [{ id: A, extra: '<div class="region">DECOY-SECOND</div>' }, { id: B }] });
+    api = newApi();
+    eq('two regions in the first cell: no place, no host', pick(call('row(A) with two regions', function () { return api.row(A); }),
+       ['ok', 'place', 'gpuIdle']), '{"ok":true,"place":null,"gpuIdle":null}');
+    eq('the row next to it is read as ever', pick(call('row(B) with one region', function () { return api.row(B); }), ['place']),
+       '{"place":"测试乙区 / 123机"}');
     clicks('host info', {});
   }
   function gpuOn() {
@@ -1068,6 +1086,439 @@ window.__con = (function () {
     clicks('table rows', {});
   }
 
+  // ---- the clone (version 8): the menu item, the dialog, the rows after a creation, the SSH address ----
+  var CLONE_OPEN = { 'r4:hover': 1, 'r4:menu:克隆实例新': 1 };
+  function plus(base, more) {
+    var o = {};
+    [base, more].forEach(function (x) { Object.keys(x).forEach(function (k) { o[k] = x[k]; }); });
+    return o;
+  }
+  // A clone of E (stopped, without GPU充足) with its dialog open; with the dialog bound; with the data disk ticked.
+  function cloneOpened(extra) {
+    __fx.mount(std(extra));
+    var api = newApi();
+    isOk('menu(E)', call('menu(E)', function () { return api.menu(E); }));
+    var s = isOk('startClone(E)', call('startClone(E)', function () { return api.startClone(E); }));
+    return { api: api, s: s };
+  }
+  function cloneBound(extra) {
+    var o = cloneOpened(extra);
+    o.b = isOk('bindCloneDialog', step(o, 'bindCloneDialog'));
+    return o;
+  }
+  function cloneTicked(extra) {
+    var o = cloneBound(extra);
+    isOk('tickCloneDataDisk', step(o, 'tickCloneDataDisk'));
+    return o;
+  }
+  function shownCloneItem() {
+    return Array.prototype.filter.call(document.querySelectorAll('li.el-dropdown-menu__item'), function (li) {
+      return li.textContent === '克隆实例新' && li.getClientRects().length > 0;
+    })[0];
+  }
+  function cloneButton(label) {
+    return Array.prototype.filter.call(__fx.cloneDialog().querySelectorAll('button'), function (b) { return b.textContent === label; })[0];
+  }
+  // startClone clicks the one menu item whose whole text is 克隆实例新, on a stopped row without GPU充足 whose menu is
+  // open, and nothing else. The older functions cannot take that item for one of theirs.
+  function cloneStart() {
+    __fx.mount(std());
+    var api = newApi();
+    isRefused('startClone(E) before its menu is open', call('startClone(E)', function () { return api.startClone(E); }), /not open/);
+    isRefused('startClone(A) on a row that shows GPU充足', call('startClone(A)', function () { return api.startClone(A); }), /GPU充足/);
+    isRefused('startClone(B) while running', call('startClone(B)', function () { return api.startClone(B); }), /state/);
+    isRefused('startClone(not an id)', call('startClone(nope)', function () { return api.startClone('nope'); }), /instance ID/);
+    eq('menu(E)', pick(call('menu(E)', function () { return api.menu(E); }), ['open', 'items']),
+       JSON.stringify({ open: true, items: ITEMS }));
+    var s = isOk('startClone(E)', call('startClone(E)', function () { return api.startClone(E); }));
+    eq('the clone context', pick(s, ['ok', 'stage']), '{"ok":true,"stage":"opened"}');
+    isRefused('startClone(E) while the clone is open', call('startClone(E) again', function () { return api.startClone(E); }),
+              /another operation/);
+    isRefused('startPowerOnGpu(A) while the clone is open', call('startPowerOnGpu(A)', function () { return api.startPowerOnGpu(A); }),
+              /another operation/);
+    clicks('clone start', CLONE_OPEN);
+    [['克隆实例', 'without its badge'], ['克隆实例新版', 'with one more character']].forEach(function (v) {
+      __fx.mount(std({ cloneItem: v[0] }));
+      var a = newApi();
+      isOk('menu(E)', call('menu(E)', function () { return a.menu(E); }));
+      isRefused('startClone(E) with the item ' + v[1], call('startClone(E)', function () { return a.startClone(E); }), /no single/);
+      clicks('the clone item ' + v[1], { 'r4:hover': 1 });
+    });
+    __fx.mount(std({ cloneTwice: true }));
+    api = newApi();
+    isOk('menu(E)', call('menu(E)', function () { return api.menu(E); }));
+    isRefused('startClone(E) with the item twice', call('startClone(E)', function () { return api.startClone(E); }), /no single/);
+    clicks('the clone item twice', { 'r4:hover': 1 });
+    var spec = std();
+    spec.rows[4].spec = 'RTX 0000';
+    __fx.mount(spec);
+    api = newApi();
+    isRefused('startClone(E) without a readable GPU count', call('startClone(E)', function () { return api.startClone(E); }),
+              /cannot be read/);
+    __fx.mount(std());
+    api = newApi();
+    __fx.showMenu(B);
+    isRefused('startClone(E) while the menu of B is open', call('startClone(E)', function () { return api.startClone(E); }), /another/);
+    __fx.mount(std());
+    api = newApi();
+    isOk('menu(E)', call('menu(E)', function () { return api.menu(E); }));
+    __fx.openBox(B, 'gpu-on');
+    isRefused('startClone(E) while a box is open', call('startClone(E)', function () { return api.startClone(E); }), /already open/);
+    __fx.mount({ rows: [{ id: E }, { id: 'not-an-id', state: '运行中' }] });
+    api = newApi();
+    isRefused('startClone(E) with a row whose ID is not valid', call('startClone(E)', function () { return api.startClone(E); }),
+              /no single instance ID/);
+    __fx.mount(std());
+    api = newApi();
+    isOk('menu(E)', call('menu(E)', function () { return api.menu(E); }));
+    __fx.coverCorner(shownCloneItem());
+    isRefused('startClone(E) with the item partly covered', call('startClone(E)', function () { return api.startClone(E); }), /covered/);
+    clicks('the clone item covered', { 'r4:hover': 1 });
+    __fx.mount(std({ menuItems: ['克隆实例', '释放实例'] }));
+    api = newApi();
+    eq('a menu without the no-GPU item', pick(call('menu(E)', function () { return api.menu(E); }), ['items']),
+       JSON.stringify({ items: ['克隆实例新', '释放实例'] }));
+    isRefused('startPowerOnNoGpu(E) finds no item of its own', call('startPowerOnNoGpu(E)', function () { return api.startPowerOnNoGpu(E); }),
+              /no single/);
+    clicks('the older function leaves the clone item alone', { 'r4:hover': 1 });
+  }
+  // bindCloneDialog binds the one dialog titled 克隆实例 once every text in it is an entry of the fixed table, the system
+  // disk is ticked and fixed, the data disk can be ticked and the sparse-file switch is off. A dialog that is the clone
+  // dialog but fails a check can still be dismissed; anything else leaves only a reload.
+  function cloneBind() {
+    var o = cloneOpened();
+    eq('dialog() sees the clone dialog', pick(call('dialog', function () { return o.api.dialog(); }), ['visible', 'list']),
+       JSON.stringify({ visible: 1, list: [{ kind: 'dialog', text: '克隆实例' }] }));
+    isRefused('bindDialog on a clone context', step(o, 'bindDialog'), /bindCloneDialog/);
+    isRefused('tickCloneDataDisk before the dialog is bound', step(o, 'tickCloneDataDisk'), /step/);
+    isRefused('continueClone before the dialog is bound', step(o, 'continueClone'), /step/);
+    isRefused('dismiss before the dialog is bound', step(o, 'dismiss'), /reload/);
+    var b = isOk('bindCloneDialog', step(o, 'bindCloneDialog'));
+    var READ = ['stage', 'kind', 'text', 'dataDisk', 'expandGb', 'remaining', 'spec', 'gpus'];
+    var first = JSON.stringify({ stage: 'clone-bound', kind: 'dialog', text: '克隆实例', dataDisk: false, expandGb: 0, remaining: 10,
+                                 spec: 'RTX 0000 * 1卡', gpus: 1 });
+    eq('what the bound clone dialog says', pick(b, READ), first);
+    eq('the dialog read a second time', pick(step(o, 'bindCloneDialog', 'bindCloneDialog again'), READ), first);
+    isRefused('confirm on a clone context', step(o, 'confirm'), /step/);
+    isRefused('settle on a clone context', step(o, 'settle'), /final confirm/);
+    ['openTimerPicker', 'bindTimerPicker', 'confirmTimerPicker', 'prepareTimer', 'confirmTimerDialog', 'readTimer'].forEach(function (m) {
+      isRefused(m + ' on a clone context', step(o, m), /timer context/);
+    });
+    isOk('dismiss the clone dialog', step(o, 'dismiss'));
+    isRefused('bindCloneDialog after the dismiss', step(o, 'bindCloneDialog'), /dismissed/);
+    clicks('clone bound and dismissed', plus(CLONE_OPEN, { 'clone:取消': 1 }));
+    isOk('startPowerOnGpu(A) once the clone was dismissed', call('startPowerOnGpu(A)', function () { return o.api.startPowerOnGpu(A); }));
+    var p = bound();
+    ['bindCloneDialog', 'tickCloneDataDisk', 'continueClone'].forEach(function (m) {
+      isRefused(m + ' on a power-on context', step(p, m), /clone context/);
+    });
+    isRefused('bindCloneDialog with an unknown context', call('bindCloneDialog(unknown)', function () { return p.api.bindCloneDialog('nope'); }),
+              /unknown context/);
+    o = cloneOpened({ boxDelay: 'later' });
+    eq('bindCloneDialog before the dialog shows', pick(step(o, 'bindCloneDialog'), ['ok', 'pending']), '{"ok":false,"pending":true}');
+    __fx.tick();
+    isOk('bindCloneDialog once it shows', step(o, 'bindCloneDialog'));
+    __fx.mount(std({ freeze: true }));
+    var api = newApi();
+    eq('menu(E) while it is still animating', pick(call('menu(E)', function () { return api.menu(E); }), ['ok', 'open']),
+       '{"ok":true,"open":false}');
+    __fx.frame();
+    isOk('menu(E) after a frame', call('menu(E)', function () { return api.menu(E); }));
+    var s = isOk('startClone(E)', call('startClone(E)', function () { return api.startClone(E); }));
+    eq('bindCloneDialog while the dialog is still animating', pick(ctxCall(api, s, 'bindCloneDialog'), ['ok', 'pending']),
+       '{"ok":false,"pending":true}');
+    __fx.frame();
+    isOk('bindCloneDialog after a frame', ctxCall(api, s, 'bindCloneDialog'));
+    [[{ note: '到期后将释放实例' }, /not in the fixed table/, 'a line that holds a word of the refusal list', true],
+     [{ note: '本次克隆免费' }, /not in the fixed table/, 'a line of harmless text', true],
+     [{ alert: '克隆后源实例将被释放' }, /not in the fixed table/, 'another warning', true],
+     [{ go: '继续并支付' }, /not in the fixed table/, 'another label on 继续', true],
+     [{ left: '今天剩余克隆次数：若干次' }, /not in the fixed table/, 'a count that is no number', true],
+     [{ diskLabel: '数据盘（推荐）' }, /not in the fixed table/, 'another label on the data disk', true],
+     [{ noDisk: true }, /once each and in order/, 'no 数据盘 checkbox', true],
+     [{ sys: 'unchecked' }, /not ticked and fixed/, 'the system disk not ticked', true],
+     [{ sys: 'enabled' }, /not ticked and fixed/, 'the system disk free to change', true],
+     [{ diskDisabled: true }, /数据盘 checkbox is disabled/, 'the data disk disabled', true],
+     [{ sparse: true }, /switch is not off/, 'the sparse-file switch on', true],
+     [{ extraInput: true }, /inputs other than/, 'one more input', true],
+     [{ title: '克隆实例（新）' }, /not the 克隆实例 dialog/, 'another title', false]].forEach(function (v) {
+      var x = cloneOpened({ clone: v[0] });
+      isRefused('bindCloneDialog with ' + v[2], step(x, 'bindCloneDialog'), v[1]);
+      isRefused('tickCloneDataDisk after ' + v[2], step(x, 'tickCloneDataDisk'), /step/);
+      isRefused('continueClone after ' + v[2], step(x, 'continueClone'), /step/);
+      if (v[3]) {
+        isOk('dismiss the dialog refused for ' + v[2], step(x, 'dismiss'));
+        clicks('the dialog with ' + v[2], plus(CLONE_OPEN, { 'clone:取消': 1 }));
+      } else {
+        isRefused('dismiss with nothing bound after ' + v[2], step(x, 'dismiss'), /reload/);
+        clicks('the dialog with ' + v[2], CLONE_OPEN);
+      }
+    });
+    o = cloneOpened();
+    __fx.openClone();
+    isRefused('bindCloneDialog with two dialogs', step(o, 'bindCloneDialog'), /more than one dialog/);
+    o = cloneOpened({ boxDelay: 'never' });
+    __fx.openBox(B, 'gpu-on');
+    isRefused('bindCloneDialog on a confirm box', step(o, 'bindCloneDialog'), /not the 克隆实例 dialog/);
+    isRefused('dismiss with nothing bound', step(o, 'dismiss'), /reload/);
+    clicks('a box in place of the clone dialog', CLONE_OPEN);
+  }
+  // tickCloneDataDisk clicks the label of the data disk's checkbox while it is not ticked, and never to untick it. The
+  // dialog is then read again: a source with a paid expansion shows one more sentence, which gives its size.
+  function cloneTick() {
+    var o = cloneTicked();
+    var READ = ['ok', 'dataDisk', 'expandGb', 'remaining'];
+    eq('the dialog read again: ticked, no expansion', pick(step(o, 'bindCloneDialog'), READ),
+       JSON.stringify({ ok: true, dataDisk: true, expandGb: 0, remaining: 10 }));
+    isRefused('tickCloneDataDisk twice', step(o, 'tickCloneDataDisk', 'tickCloneDataDisk again'), /already ticked/);
+    clicks('clone tick', plus(CLONE_OPEN, { 'clone:数据盘': 1 }));
+    o = cloneBound({ clone: { expandGb: 5 } });
+    eq('before the tick the expansion is not shown', pick(o.b, ['dataDisk', 'expandGb']), '{"dataDisk":false,"expandGb":0}');
+    isOk('tickCloneDataDisk', step(o, 'tickCloneDataDisk'));
+    eq('the dialog read again: 5 GB of paid expansion', pick(step(o, 'bindCloneDialog'), READ),
+       JSON.stringify({ ok: true, dataDisk: true, expandGb: 5, remaining: 10 }));
+    o = cloneTicked({ clone: { expandText: '源实例有扩容数据盘：5GB，请先扩容目标实例' } });
+    isRefused('the dialog read again with the sentence in other words', step(o, 'bindCloneDialog'), /not in the fixed table/);
+    isRefused('continueClone with the sentence in other words', step(o, 'continueClone'), /not in the fixed table/);
+    isOk('dismiss', step(o, 'dismiss'));
+    clicks('another sentence', plus(CLONE_OPEN, { 'clone:数据盘': 1, 'clone:取消': 1 }));
+    o = cloneTicked({ clone: { lag: true, expandGb: 5 } });
+    eq('the dialog read again before the page marked the tick', pick(step(o, 'bindCloneDialog'), ['ok', 'pending']),
+       '{"ok":false,"pending":true}');
+    eq('continueClone before the page marked the tick', pick(step(o, 'continueClone'), ['ok', 'pending']), '{"ok":false,"pending":true}');
+    eq('tickCloneDataDisk before the page marked the tick', pick(step(o, 'tickCloneDataDisk', 'tickCloneDataDisk again'), ['ok', 'pending']),
+       '{"ok":false,"pending":true}');
+    __fx.tick();
+    eq('the dialog read again once it did', pick(step(o, 'bindCloneDialog'), READ),
+       JSON.stringify({ ok: true, dataDisk: true, expandGb: 5, remaining: 10 }));
+    clicks('a tick that shows late', plus(CLONE_OPEN, { 'clone:数据盘': 1 }));
+    o = cloneBound();
+    __fx.coverCorner(__fx.cloneDialog().querySelector('input[value="copy_data_disk"]').closest('label'));
+    isRefused('tickCloneDataDisk on a label partly covered', step(o, 'tickCloneDataDisk'), /covered/);
+    clicks('the label covered', CLONE_OPEN);
+  }
+  // continueClone repeats every check, needs the data disk ticked, a clone left today, and the row as at the start and
+  // still without GPU充足; then it clicks 继续 and the operation is over.
+  function cloneGo() {
+    var o = cloneBound({ clone: { expandGb: 5 } });
+    isRefused('continueClone before the data disk is ticked', step(o, 'continueClone'), /not ticked/);
+    isOk('tickCloneDataDisk', step(o, 'tickCloneDataDisk'));
+    var g = isOk('continueClone', step(o, 'continueClone'));
+    eq('what continueClone answers', pick(g, ['stage', 'dataDisk', 'expandGb', 'remaining']),
+       JSON.stringify({ stage: 'continued', dataDisk: true, expandGb: 5, remaining: 10 }));
+    clicks('clone continued', plus(CLONE_OPEN, { 'clone:数据盘': 1, 'clone:继续': 1 }));
+    eq('the page is no longer the instance list', pick(call('page', function () { return o.api.page(); }), ['list']), '{"list":false}');
+    isRefused('continueClone twice', step(o, 'continueClone', 'continueClone again'), /step/);
+    isRefused('tickCloneDataDisk after 继续', step(o, 'tickCloneDataDisk'), /step/);
+    isRefused('dismiss after 继续', step(o, 'dismiss'), /instance list/);
+    // back on the list with the same script object, as in the console's single page: the operation has ended
+    __fx.mount(std());
+    isOk('startPowerOnGpu(A) once the clone went on', call('startPowerOnGpu(A)', function () { return o.api.startPowerOnGpu(A); }));
+    o = cloneBound({ clone: { remaining: 0 } });
+    eq('the dialog says no clone is left today', pick(o.b, ['remaining']), '{"remaining":0}');
+    isOk('tickCloneDataDisk', step(o, 'tickCloneDataDisk'));
+    isRefused('continueClone with no clone left today', step(o, 'continueClone'), /no clone is left/);
+    isOk('dismiss', step(o, 'dismiss'));
+    clicks('no clone left', plus(CLONE_OPEN, { 'clone:数据盘': 1, 'clone:取消': 1 }));
+    o = cloneTicked();
+    __fx.set(E, { gpuFree: true });
+    isRefused('continueClone once the row shows GPU充足', step(o, 'continueClone'), /GPU充足/);
+    isOk('dismiss', step(o, 'dismiss'));
+    clicks('GPU back before 继续', plus(CLONE_OPEN, { 'clone:数据盘': 1, 'clone:取消': 1 }));
+    o = cloneTicked();
+    __fx.set(B, { state: '关机中' });
+    isRefused('continueClone after another row changed', step(o, 'continueClone'), /changed/);
+    o = cloneTicked();
+    __fx.replaceRow(E);
+    isRefused('continueClone after the row was re-rendered', step(o, 'continueClone'), /re-rendered/);
+    o = cloneTicked();
+    __fx.set(E, { spec: 'RTX 0000 * 2卡' });
+    isRefused('continueClone after the GPU count changed in place', step(o, 'continueClone'), /spec or GPU count/);
+    o = cloneTicked();
+    __fx.swapClone();
+    isRefused('continueClone after the dialog was replaced', step(o, 'continueClone'), /bound dialog/);
+    isRefused('tickCloneDataDisk after the dialog was replaced', step(o, 'tickCloneDataDisk'), /bound dialog/);
+    isRefused('bindCloneDialog after the dialog was replaced', step(o, 'bindCloneDialog'), /bound dialog/);
+    isRefused('dismiss after the dialog was replaced', step(o, 'dismiss'), /bound dialog/);
+    clicks('the dialog replaced', plus(CLONE_OPEN, { 'clone:数据盘': 1 }));
+    o = cloneTicked();
+    __fx.coverCorner(cloneButton('继续'));
+    isRefused('continueClone with 继续 partly covered', step(o, 'continueClone'), /covered/);
+    clicks('继续 covered', plus(CLONE_OPEN, { 'clone:数据盘': 1 }));
+    // the page ignores 继续: for the script the operation is over, and the dialog it left can still be dismissed
+    o = cloneTicked({ clone: { ignoreGo: true } });
+    isOk('continueClone that the page ignores', step(o, 'continueClone'));
+    isOk('dismiss the dialog the page left open', step(o, 'dismiss'));
+    clicks('继续 ignored', plus(CLONE_OPEN, { 'clone:数据盘': 1, 'clone:继续': 1, 'clone:取消': 1 }));
+  }
+  // idDigests answers a digest per row and no ID. findCreated answers only rows that were not there before, on the
+  // given host and with the given spec; with the ID the platform gave, only that row, under the same three conditions.
+  function cloneRows() {
+    __fx.mount(std());
+    var api = newApi();
+    var d = isOk('idDigests', call('idDigests', function () { return api.idDigests(); }));
+    var digs = d.digests || [];
+    check('one digest per row, in the form the script uses', digs.length === 5 && digs.every(function (x) {
+      return /^\d{1,3}:[0-9a-f]{8}$/.test(x); }), JSON.stringify(d));
+    check('the digests differ row by row', digs.filter(function (x, k) { return digs.indexOf(x) === k; }).length === 5, JSON.stringify(d));
+    check('the digests name no instance', [A, B, C, D, E].every(function (id) { return JSON.stringify(d).indexOf(id) < 0; }),
+          JSON.stringify(d));
+    var N1 = 'wxyz111111-2222wxyz';
+    var N2 = 'wxyz111111-3333wxyz';
+    var N3 = 'mnop222222-4444mnop';
+    var SPEC = 'RTX 0000 * 1卡';
+    var after = std();
+    after.rows.push({ id: N1, state: '开机中' }, { id: N2, state: '运行中', spec: 'RTX 0000 * 2卡' }, { id: N3, state: '运行中' });
+    __fx.mount(after);
+    function found(label, f) { return pick(call(label, f), ['ok', 'count', 'rows']); }
+    function none(label, f) { eq(label, found(label, f), '{"ok":true,"count":0,"rows":[]}'); }
+    var f = call('findCreated', function () { return api.findCreated(digs, 'wxyz111111', SPEC); });
+    eq('the one candidate', pick(f, ['ok', 'count', 'rows']),
+       JSON.stringify({ ok: true, count: 1, rows: [{ id: N1, state: '开机中', mode: 'gpu', timer: null }] }));
+    check('the answer names no other row', [A, B, C, D, E, N2, N3].every(function (id) { return JSON.stringify(f).indexOf(id) < 0; }),
+          JSON.stringify(f));
+    eq('with the ID the platform gave', found('findCreated(id)', function () { return api.findCreated(digs, 'wxyz111111', SPEC, N1); }),
+       JSON.stringify({ ok: true, count: 1, rows: [{ id: N1, state: '开机中', mode: 'gpu', timer: null }] }));
+    none('with the ID of a new row that has another spec', function () { return api.findCreated(digs, 'wxyz111111', SPEC, N2); });
+    none('with the ID of a new row on another host', function () { return api.findCreated(digs, 'wxyz111111', SPEC, N3); });
+    none('with the ID of a row that was there before', function () { return api.findCreated(digs, 'wxyz987654', 'vGPU-00GB-000W * 2卡', B); });
+    none('on a host whose only row was there before', function () { return api.findCreated(digs, 'abcd123456', SPEC); });
+    none('on a host with no row', function () { return api.findCreated(digs, 'qrst000000', SPEC); });
+    eq('the new row of the other spec', found('findCreated(other spec)', function () { return api.findCreated(digs, 'wxyz111111', 'RTX 0000 * 2卡'); }),
+       JSON.stringify({ ok: true, count: 1, rows: [{ id: N2, state: '运行中', mode: 'gpu', timer: null }] }));
+    var two = std();
+    two.rows.push({ id: N1, state: '开机中' }, { id: N2, state: '开机中', mode: 'nogpu', timer: '2026-10-02 03:00:00' });
+    __fx.mount(two);
+    eq('two candidates are both answered', found('findCreated(two)', function () { return api.findCreated(digs, 'wxyz111111', SPEC); }),
+       JSON.stringify({ ok: true, count: 2, rows: [{ id: N1, state: '开机中', mode: 'gpu', timer: null },
+                                                  { id: N2, state: '开机中', mode: 'nogpu', timer: '2026-10-02 03:00:00' }] }));
+    [[['abc'], 'a digest of another form'], ['19:0a1b2c3d', 'a digest that is not in a list'], [[], 'an empty list'],
+     [[19], 'a number'], [undefined, 'nothing']].forEach(function (v) {
+      isRefused('findCreated with ' + v[1], call('findCreated(' + v[1] + ')', function () { return api.findCreated(v[0], 'wxyz111111', SPEC); }),
+                /digests/);
+    });
+    isRefused('findCreated with an instance ID for the host', call('findCreated(host)', function () {
+      return api.findCreated(digs, N1, SPEC); }), /host ID/);
+    isRefused('findCreated with an empty spec', call('findCreated(spec)', function () { return api.findCreated(digs, 'wxyz111111', ''); }),
+              /spec/);
+    isRefused('findCreated with something that is no instance ID', call('findCreated(bad id)', function () {
+      return api.findCreated(digs, 'wxyz111111', SPEC, 'nope'); }), /instance ID/);
+    __fx.mount({ rows: [{ id: A }, { id: 'not-an-id' }] });
+    isRefused('idDigests with a row whose ID is not valid', call('idDigests', function () { return api.idDigests(); }),
+              /no single instance ID/);
+    isRefused('findCreated with a row whose ID is not valid', call('findCreated', function () {
+      return api.findCreated(digs, 'wxyz111111', SPEC); }), /no single instance ID/);
+    clicks('clone rows', {});
+  }
+  // sshAddress is the one function that reads the page's own data: for a running row, the three keys of the one object
+  // that carries its ID, checked against each other. A refusal says which check failed and carries no value read.
+  function sshAddr() {
+    __fx.mount(std());
+    var api = newApi();
+    __fx.dataReads();
+    var r = isOk('sshAddress(B)', call('sshAddress(B)', function () { return api.sshAddress(B); }));
+    eq('the address of the running row, and nothing else', JSON.stringify(r),
+       JSON.stringify({ ok: true, id: B, host: 'connect.faker1.seetacloud.com', port: 20001 }));
+    eq('the keys read from the page data', JSON.stringify(__fx.dataReads()),
+       JSON.stringify(['uuid', 'uuid', 'uuid', 'uuid', 'uuid', 'proxy_host', 'ssh_port', 'ssh_command']));
+    isRefused('sshAddress(A) while stopped', call('sshAddress(A)', function () { return api.sshAddress(A); }), /state/);
+    isRefused('sshAddress(D) while starting', call('sshAddress(D)', function () { return api.sshAddress(D); }), /state/);
+    isRefused('sshAddress(not an id)', call('sshAddress(nope)', function () { return api.sshAddress('nope'); }), /instance ID/);
+    eq('nothing is read from the page data for a refusal by the row', JSON.stringify(__fx.dataReads()), '[]');
+    isOk('startPowerOnGpu(A)', call('startPowerOnGpu(A)', function () { return api.startPowerOnGpu(A); }));
+    isOk('sshAddress(B) while another operation is open', call('sshAddress(B)', function () { return api.sshAddress(B); }));
+    function withB(fields, extra) {
+      var s = std(extra);
+      Object.keys(fields).forEach(function (k) { s.rows[1][k] = fields[k]; });
+      __fx.mount(s);
+      return newApi();
+    }
+    function refusedB(name, fields, extra, re, secrets) {
+      var a = withB(fields, extra);
+      var out = call('sshAddress(B) with ' + name, function () { return a.sshAddress(B); });
+      isRefused('sshAddress(B) with ' + name, out, re);
+      var j = JSON.stringify(out) || '';
+      check('the refusal with ' + name + ' carries no value read', (secrets || []).every(function (s) { return j.indexOf(s) < 0; }), j);
+      check('nothing of the other table is read with ' + name, __fx.dataReads().every(function (k) { return k.indexOf('other:') !== 0; }), '');
+    }
+    refusedB('a host outside the two domains', { ssh: { host: 'connect.fake.example.org' } }, null, /SSH host/, ['example']);
+    refusedB('the domain at the front only', { ssh: { host: 'seetacloud.com.evil.example' } }, null, /SSH host/, ['evil']);
+    refusedB('a host that only ends like the domain', { ssh: { host: 'evilseetacloud.com' } }, null, /SSH host/, ['evil']);
+    refusedB('a host with a space in it', { ssh: { host: 'con nect.seetacloud.com' } }, null, /SSH host/, ['con nect']);
+    refusedB('a host in capitals', { ssh: { host: 'Connect.Fake.seetacloud.com' } }, null, /SSH host/, ['Connect']);
+    refusedB('a host with an empty label', { ssh: { host: 'connect..seetacloud.com' } }, null, /SSH host/, ['connect']);
+    refusedB('a host that is no text', { ssh: { host: 12345 } }, null, /SSH host/, ['12345']);
+    refusedB('port 0', { ssh: { port: 0 } }, null, /SSH port/, []);
+    refusedB('port 65536', { ssh: { port: 65536 } }, null, /SSH port/, ['65536']);
+    refusedB('a port with a fraction', { ssh: { port: 22.5 } }, null, /SSH port/, ['22.5']);
+    refusedB('a port as text', { ssh: { port: '20001' } }, null, /SSH port/, ['20001']);
+    refusedB('a command for another host', { ssh: { cmd: 'ssh -p 20001 root@other.seetacloud.com' } }, null, /SSH command/,
+             ['other.', '20001', 'faker1']);
+    refusedB('a command with more in it', { ssh: { cmd: 'ssh -p 20001 root@connect.faker1.seetacloud.com -o ProxyCommand=x' } }, null,
+             /SSH command/, ['ProxyCommand', '20001', 'faker1']);
+    refusedB('no entry in the page data', { inData: 0 }, null, /no entry/, ['faker1']);
+    refusedB('two entries in the page data', { inData: 2 }, null, /more than once/, ['faker1', '20001']);
+    refusedB('no page data on the app element', {}, { vnode: 'none' }, /was not found/, []);
+    refusedB('two tables rooted at the instance table', {}, { vnode: 'two' }, /was not found/, ['faker1']);
+    refusedB('a table without its rows', {}, { vnode: 'nodata' }, /was not found/, []);
+    refusedB('the table under another name', {}, { vnode: 'named' }, /was not found/, ['faker1']);
+    refusedB('the table deeper than the walk goes', {}, { vnode: 'deep' }, /was not found/, ['faker1']);
+    refusedB('a node that holds itself (the walk has to end)', {}, { vnode: 'loop' }, /was not found/, ['faker1']);
+    var a2 = withB({ ssh: { host: 'connect.fake.autodl.com', port: 65535 } });
+    eq('a host under autodl.com and the highest port', pick(call('sshAddress(B)', function () { return a2.sshAddress(B); }), ['host', 'port']),
+       '{"host":"connect.fake.autodl.com","port":65535}');
+    a2 = withB({}, { vnode: 'suspense' });
+    eq('the table behind a suspense boundary', pick(call('sshAddress(B)', function () { return a2.sshAddress(B); }), ['ok', 'port']),
+       '{"ok":true,"port":20001}');
+    check('nothing of the other table was read', __fx.dataReads().every(function (k) { return k.indexOf('other:') !== 0; }), '');
+    clicks('ssh address', {});
+  }
+  var CLONE_FNS = ['startClone', 'bindCloneDialog', 'tickCloneDataDisk', 'continueClone', 'idDigests', 'findCreated', 'sshAddress'];
+  // The seven functions exist in every form of the API: outside the instance list and in the shell that refuses all.
+  // A page that holds the everyday copy does not serve the copy for cloning: that one refuses until a reload.
+  function cloneShells() {
+    var NEW = CLONE_FNS;
+    __fx.mount(std());
+    var api = newApi();
+    eq('the copy for cloning says what it is', String(api.clone), 'true');
+    window.__autodl = { brand: 'autodl-gpu console.js', version: 9, mode: 'offline-test' };
+    var over = call('run the copy for cloning in a page that holds the everyday copy', function () { return make('offline-test'); });
+    isRefused('row(A) through it', call('row(A)', function () { return over.row(A); }), /reload/);
+    isRefused('startClone(E) through it', call('startClone(E)', function () { return over.startClone(E); }), /reload/);
+    delete window.__autodl;
+    var prod = call('make the api without test mode', function () { return make(); });
+    NEW.forEach(function (m) {
+      isRefused(m + ' without test mode', call(m, function () { return prod[m](E); }),
+                m === 'findCreated' ? /instance list/ : /instance list|unknown context/);
+    });
+    delete window.__autodl;
+    window.__autodl = { brand: 'someone else' };
+    var other = call('run the script with window.__autodl taken', function () { return make('offline-test'); });
+    NEW.forEach(function (m) {
+      isRefused(m + ' with window.__autodl taken', call(m, function () { return other[m](E); }), /reload/);
+    });
+    delete window.__autodl;
+    clicks('clone shells', {});
+  }
+  // The everyday copy has none of the clone's functions, clicks nothing of the clone's and reads nothing of the page's
+  // own data. A page that holds the copy for cloning serves it as well.
+  function noClone() {
+    __fx.mount(std({ menuItems: ['克隆实例', '释放实例'] }));
+    var api = newApi();
+    CLONE_FNS.concat(['clone']).forEach(function (m) { check('the everyday copy has no ' + m, api[m] === undefined, typeof api[m]); });
+    eq('a menu without the no-GPU item', pick(call('menu(E)', function () { return api.menu(E); }), ['items']),
+       JSON.stringify({ items: ['克隆实例新', '释放实例'] }));
+    isRefused('startPowerOnNoGpu(E) finds no item of its own', call('startPowerOnNoGpu(E)', function () { return api.startPowerOnNoGpu(E); }),
+              /no single/);
+    clicks('the everyday copy leaves the clone item alone', { 'r4:hover': 1 });
+    eq('nothing was read from the page data', JSON.stringify(__fx.dataReads()), '[]');
+    var full = { brand: 'autodl-gpu console.js', version: 9, mode: 'offline-test', clone: true };
+    window.__autodl = full;
+    var got = call('run the everyday copy in a page that holds the copy for cloning', function () { return make('offline-test'); });
+    check('the copy for cloning serves the everyday copy as well', got === full, typeof got);
+    delete window.__autodl;
+  }
+
   // A CSP that blocks network, frames, media and forms, if the page accepts one added by script (as in skeleton_test.js).
   function installCsp() {
     return new Promise(function (resolve) {
@@ -1089,6 +1540,8 @@ window.__con = (function () {
   var SCENARIOS = [reads, hostInfo, gpuOn, noGpuOn, noGpuLeft, cancelTimer, setTimer, modifyTimer, timerTitle, twoBoxes, otherRowChanges, duplicateId,
                    idElsewhere, rowChanges, menus, frozen, noChange, pages, contexts, boxes, gpuGone, specChanges, reloads, hiddenBoxes, powerOff,
                    steps, interaction, oneAtATime, pickerBinding, sameTime, editorForms, dialogWords, rePaste, tableRows];
+  // The copy for cloning runs these as well; the everyday copy runs noClone in their place.
+  var CLONE_SCENARIOS = [cloneStart, cloneBind, cloneTick, cloneGo, cloneRows, sshAddr, cloneShells];
   var cspActive = null;
   async function run(fn) {
     var evalHits = trapsOff();
@@ -1101,12 +1554,22 @@ window.__con = (function () {
     var digest = await sha256(fn.toString());
     if (cspActive === null) cspActive = await installCsp();
     make = fn;
-    SCENARIOS.forEach(function (s) {
+    // Which copy is this: the one with the clone's functions or the everyday one. window.__expectClone, when it is set
+    // (tests/console/run_headless.py sets it), says which it has to be.
+    var probe = null;
+    delete window.__autodl;
+    try { probe = fn('offline-test'); } catch (e) { probe = null; }
+    delete window.__autodl;
+    var clone = !!probe && typeof probe.startClone === 'function';
+    if (typeof window.__expectClone === 'boolean') {
+      check('this copy has the functions of the clone: ' + window.__expectClone, clone === window.__expectClone, String(clone));
+    }
+    SCENARIOS.concat(clone ? CLONE_SCENARIOS : [noClone]).forEach(function (s) {
       try { s(); } catch (e) { check(s.name + ': ran to the end', false, e && e.message); }
     });
     __fx.mount({ rows: [] });
     var failed = checks.filter(function (c) { return !c.ok; });
-    return JSON.stringify({ pass: failed.length === 0, digest: digest, csp: cspActive, total: checks.length, failed: failed });
+    return JSON.stringify({ pass: failed.length === 0, digest: digest, csp: cspActive, clone: clone, total: checks.length, failed: failed });
   }
 
   // For mutation checks only: evaluate a source text with the traps on, then run().

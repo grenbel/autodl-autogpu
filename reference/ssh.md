@@ -1,6 +1,6 @@
-# ctl 与 SSH（ctl v0.8）
+# ctl 与 SSH（ctl v0.9）
 
-本文件写本机助手 ctl v0.8 怎么连实例、有哪些命令。实例端的守护脚本怎么判断见 `reference/guard.md`，本机记录、授权与账本、校准见 `reference/ledger.md`，控制台上的操作见 `reference/console.md`。
+本文件写本机助手 ctl v0.9 怎么连实例、有哪些命令。实例端的守护脚本怎么判断见 `reference/guard.md`，本机记录、授权与账本、校准见 `reference/ledger.md`，控制台上的操作见 `reference/console.md`，没有空闲卡时的等卡与克隆见 `reference/clone.md`。
 
 ## 认准实例
 - 别名只说明怎么连，它连到哪台实例会变（`~/.ssh/config` 被改过，实例重建后换了端口而别名没改）。所以除 `check`、`wait`、`doctor` 外，每条带别名的命令都认定一台实例：命令行给了 `--instance <ID>` 就是它，否则取本机记录里这个别名核实过的对应（`check 别名 --instance ID` 记下的）
@@ -31,7 +31,7 @@
 - 发往实例的值（push 的父目录、pull 的路径、run 的 --cmd 与 --log、arm 的 --env-setup）以盘符开头时 ctl 拒绝执行，那是 Git Bash 改写了参数的迹象，改用 scripts/ctl 启动器
 
 ## 命令一览
-- `version` 打印 ctl 的版本（0.8.0）；`now` 打印此刻的 unix 秒（取 T0 用）；`doctor [别名]` 见下文
+- `version` 打印 ctl 的版本（0.9.0）；`now` 打印此刻的 unix 秒（取 T0 用）；`doctor [别名]` 见下文
 - 带别名的命令除 `check`、`wait`、`doctor` 外都可以加 `--instance <ID>`（见"认准实例"），下面不逐条重复
 - `wait 别名 [--state up|down] [--mode gpu|nogpu] [--timeout 10m] [--every 10]`：`up` 时每隔 `--every` 秒探一次，连上后识别模式，模式识别不出或与 `--mode` 不符退出 1；`down` 时连续 5 次探测都失败才算连不上（`confirmed` 仍是 false）；到 `--timeout` 还没等到退出 1
 - `tail 别名 任务名 [-n 行数]` 看任务日志的末尾，任务名写 `guard` 是守护自己的日志；`revive 别名 [--restart]` 把守护进程拉起来、不改任何设置；`push 别名 本地路径 实例上的父目录 [--overwrite] [--timeout 60m]` 与 `pull 别名 实例上的路径 本地目录 [--overwrite] [--timeout 60m]` 传文件，细节在"连接与重发"
@@ -40,7 +40,10 @@
 - `deploy 别名 [--no-autostart]` 校验和对上后调用守护的 `install-autostart`，输出 `deployed`（守护脚本已就位时为 true）、`path`、`sha256`、`autostart`（installed、already，或 failed、not sent、uncertain 加原话）；装不上退出 1，这条 SSH 没送到退出 2、说不清退出 6，`--no-autostart` 跳过这一步。钩子是新装上的，就清掉这台实例的校准，结果写在 `calibration_forget`（清不掉时 deploy 退出 1，而 `autostart` 是 installed：自启装好了，只是旧校准还在，本机记录修好后 `calibrate 别名 --forget`）。所以 `deployed` 为 true 而退出非 0 时，要看 `autostart` 与 `calibration_forget` 分清是哪一项没成。输出里的 `note` 是一句固定的提醒，每次都有：换了守护脚本之后，正在跑的旧守护进程要到它下一次启动才换成新的（你的下一次 arm 或 `revive --restart` 会重启它，再就是下次开机）；`status` 的 `daemon_version` 与 `version` 相同就不用理会。`autostart 别名 install|uninstall` 单独装卸，退出码照守护
 - `status 别名` 把守护给的键（包括 `deadline_in_s`、`keep_in_s`）原样收进结果，另算 `heartbeat_age_s` 与 `booted_at`。`booted_at` 是这次开机容器启动的时刻（unix 秒，按本机的时钟，也就是 T0 与账本用的那个钟）：本机收到回答的时刻，减去容器已经开了多久。后者由守护给的 `up`（内核开机时长）减去 `boot`（1 号进程的启动时刻，单位是时钟滴答）除以实例的 `getconf CLK_TCK` 得出，是一段时长，实例的时钟准不准都不影响；算不出时为 null；接手一台已经开着的实例时用它记账。守护还没部署时 status 退出 1、`guard` 为 `not deployed or failed`，先 deploy；`armed_by=boot` 时加一条 note，说这次开机是自启 arm 的、没有 env_setup，跑任务前先 arm（AI 的 arm 直接替换它）。status 每次成功都把守护报的 `autostart` 与 `boot_settings` 记进本机记录；`arm` 与 `autostart` 成功、在实例上出了错或说不清（退出 0、1、6）之后，ctl 也自己再读一次记下（记不进去只在 stderr 提一句，不影响命令），`auth show` 的 `guard_at_boot` 用的就是它。这一次读不到，或者 status 得到了实例的回答而守护答不出（没部署，脚本不在了），原来记的那条就去掉：宁可下一次开机多设一个临时定时，也不沿用可能已经不成立的旧回答
 - `check 别名 [--instance ID] [--config]` 报用的是哪个 ssh、连不连得上。带 `--instance` 时另读主机名，与 `autodl-container-<ID>` 比较，结果写在 `instance_match`；一致时把别名与实例 ID 记进本机记录（这是别名被认作这台实例的唯一途径），不一致退出 13，读不到主机名按 ssh 的结果退出 2 或 6，记不进本机记录退出 11。`--config` 另打印 ssh 把这个别名解析成的主机、端口、用户与密钥文件路径，只在排查连不上时用
-- `auth ...`、`log ...`、`usage ...`、`calibrate ...` 见 `reference/ledger.md`
+- `run` 另可带 `--req <请求号>`（16 位十六进制，不给时 ctl 自己取一个）。给了的话 ctl 先只读地问这个请求号起过这个任务没有，再决定发不发启动：起过，不再发，回答 `already` 与它现在的状态，退出 0；说不清（上一次开机在启动当中结束了），退出 6，什么都不发；没起过或这次开机里正在起，照常发给守护。守护自己只在同一次开机里认得同一个请求号，跨开机的"不重起"靠这一问。`job 别名 任务名 --req 请求号` 是单独的这一问，只读，回答 `started`（真、假，说不清时为 null）、`state`、登记在哪、是不是这次开机的、结束了的退出码
+- 克隆时才用的几条，用法都在 `reference/clone.md`。`manifest 别名 [--content] [--compare 清单文件] [--changed-after unix时刻] [--project 目录] [--out 文件] [--timeout DUR]` 只读地列出数据盘上每个文件的路径与大小（带 `--content` 时另取每个文件的 SHA-256），写成项目 `.autodl/` 下的一个清单文件，并给出总字节数、估计的拷贝秒数与由它算出的票的时长；带 `--compare` 时说同那份清单一样不一样（不一样退出 1，列出前 20 条）；有登记的任务在跑或读不到守护的状态时退出 3；不算在内的是守护自己的状态、日志、脚本与平台放在数据盘顶层的 `.autodl/`。`spec 别名 [--gpu-model 型号] [--gpus N] [--driver 版本] [--cpu-per-gpu N] [--mem-per-gpu-gb N] [--min-system-bytes N] [--min-data-bytes N]` 只读地报显卡的型号、数量与驱动、CPU 配额折成的核数、内存上限、两个盘的总容量，给了哪样比哪样，有一样不符退出 1（无卡模式下读到的是无卡的配额，有卡开机时才用它核对）。`ticket write|read|extend|start|clear 别名 --txn 事务号 ...` 写、读、改、起循环、撤克隆票。`read` 只读，不查本机的克隆记录，可以不带 `--txn`，带了就另答票上的标记是不是这一次的（`mark_matches`，不是就退出 1）。其余四条都先在本机的克隆记录里核对事务号，并核对这个别名核实过的实例是这次克隆的原机器还是新机器（写票与 `clear --source` 对原机器，其余对新机器），对不上就不发任何远端命令、退出 1；退出 3 是拒绝（例如守护没配好时撤新机器上的票），4 是票的循环已经发出了关机，6 是撤票之后没等到循环的回执
+- 克隆出来的新实例有自己的别名，写法同"别名的写法与第一次连接"，名字取原别名加后缀（如 `autodl-demo-c1`），密钥用同一把；原别名那一条不动。新别名照样要 `check 别名 --instance <新实例ID>` 核实
+- `auth ...`、`log ...`、`usage ...`、`calibrate ...`、`clone-record ...` 见 `reference/ledger.md`
 
 ## 别名的写法与第一次连接
 - 这一节的事都由你做。用户只做三件：把你给的公钥贴进控制台，把登录指令发给你，在浏览器里登录 AutoDL

@@ -1,6 +1,7 @@
 // Offline fixtures for reference/console.js: fake AutoDL instance-list pages built like the real console's structure
 // (docs/tests/2026-10-01-console-fixtures.md) with every value fake, plus the console's behaviours (hover menus,
-// confirm boxes, the timer dialog and its picker, rows that change after a confirm) as event handlers.
+// confirm boxes, the timer dialog and its picker, rows that change after a confirm, the clone dialog and the change of
+// page behind its 继续) as event handlers, and the page's own data in the shape the console keeps it in.
 // Every DOM change made by these handlers or by the knobs below happens between enter() and leave(); a change outside
 // them is a change made by the script under test and is reported by violations().
 // Paste this file first, then tests/console/run.js. Nothing here talks to the network.
@@ -9,6 +10,7 @@ window.__fx = (function () {
   var COLS = ['实例ID / 名称', '状态', '规格详情', '本地磁盘', '健康状态', '付费方式', '释放时间/停机时间', 'SSH登录', '快捷工具', '操作'];
   var MENU = ['无卡模式开机', '更换镜像', '保存镜像', '升降配置', '扩容数据盘', '缩容数据盘', '转包年包月', '克隆实例',
               '跨实例拷贝数据', '修改SSH密码', '重置系统', '释放实例'];
+  var CLONE_ITEM = '克隆实例';
   var depth = 0;
   var violations = [];
   var mo = new MutationObserver(function () {});
@@ -17,6 +19,7 @@ window.__fx = (function () {
   var opts = {};
   var rows = {};
   var seq = 0;
+  var dataReads = [];
 
   function enter() { if (depth === 0) violations = violations.concat(mo.takeRecords()); depth++; }
   function leave() { depth--; if (depth === 0) mo.takeRecords(); }
@@ -84,7 +87,7 @@ window.__fx = (function () {
   }
   function rowHtml(r) {
     return '<tr class="el-table__row" data-fx="' + r.key + '">' +
-      plainCell(1, '<div><div class="region"' + regionRef(r) + '>DECOY-REGION<span>DECOY-HOST</span></div><div></div>' +
+      plainCell(1, '<div><div class="region"' + regionRef(r) + '>测试乙区 <span>/ 123机</span></div><div></div>' +
         '<div class="iid">' + r.id + '</div>' +
         '<button type="button" class="el-button el-button--text el-button--small"><span>' + esc(r.name) + '</span></button>' +
         r.extra + '<div><span></span></div></div>') +
@@ -97,13 +100,27 @@ window.__fx = (function () {
       plainCell(8, '<div></div>') + plainCell(9, '<div></div>') +
       '<td class="el-table_1_column_10 el-table__cell">' + opsCell(r) + '</td></tr>';
   }
+  // The items of a row's menu. The clone item is rendered as the console does it (seen 2026-10-03): the name, then a
+  // badge 新 in a span of its own, so the item's whole text is 克隆实例新. opts.cloneItem puts another text in its place,
+  // opts.cloneTwice renders the item twice, opts.menuItems replaces the whole list.
+  function menuItems() {
+    var items = opts.menuItems || MENU;
+    if (!opts.cloneTwice) return items;
+    return items.reduce(function (a, t) { return a.concat(t === CLONE_ITEM ? [t, t] : [t]); }, []);
+  }
+  function itemInner(t) {
+    if (t !== CLONE_ITEM) return '<span>' + esc(t) + '</span>';
+    return opts.cloneItem ? '<span>' + esc(opts.cloneItem) + '</span>'
+      : '<span>' + CLONE_ITEM + '</span><span class="new-clone">新</span>';
+  }
   function popperHtml(r) {
+    var items = menuItems();
     return '<div class="el-popper is-light dd" id="' + r.popper + '" role="tooltip" aria-hidden="true" style="display:none">' +
       '<div class="el-scrollbar"><div class="el-scrollbar__wrap"><ul class="el-scrollbar__view"><ul class="el-dropdown-menu" id="' +
-      r.menu + '">' + MENU.map(function (t, k) {
+      r.menu + '">' + items.map(function (t, k) {
         return '<div><li class="el-dropdown-menu__item" aria-describedby="' + r.menu + '-tip-' + k + '" aria-disabled="false">' +
-          '<span>' + t + '</span></li></div>';
-      }).join('') + '</ul></ul></div></div></div>' + MENU.map(function (t, k) {
+          itemInner(t) + '</li></div>';
+      }).join('') + '</ul></ul></div></div></div>' + items.map(function (t, k) {
         return '<div class="el-tooltip__popper is-dark" id="' + r.menu + '-tip-' + k + '" role="tooltip" aria-hidden="true" ' +
           'style="display:none">DECOY-TIP</div>';
       }).join('');
@@ -123,10 +140,15 @@ window.__fx = (function () {
   var CSS = '<style>body{margin:0;font:11px/1.2 sans-serif}.el-table td,.el-table th{padding:0 2px;white-space:nowrap}' +
     '.el-button{font-size:11px;padding:0 2px}.el-popper,.el-tooltip__popper{position:absolute;top:150px;left:10px;' +
     'z-index:2500;background:#fff;border:1px solid #ccc}.el-dropdown-menu{list-style:none;margin:0;padding:0}' +
-    '.el-message-box__wrapper,.el-overlay-dialog{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000}' +
+    '.el-message-box__wrapper,.el-overlay-dialog,.el-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000}' +
     '.el-message-box,.el-dialog{position:absolute;top:40px;left:40px;width:460px;background:#fff;border:1px solid #888}' +
     '.el-picker-panel{position:fixed;top:250px;left:60px;z-index:3000;background:#fff;border:1px solid #888}' +
-    '.el-message{position:fixed;top:5px;left:200px;z-index:4000}</style>';
+    '.el-message{position:fixed;top:5px;left:200px;z-index:4000}' +
+    '.el-checkbox{display:inline-flex;align-items:center;margin-right:10px}.el-checkbox__input{position:relative}' +
+    '.el-checkbox__inner{display:inline-block;width:10px;height:10px;border:1px solid #888}' +
+    '.el-checkbox__original,.el-switch__input{position:absolute;opacity:0;width:0;height:0;margin:0;z-index:-1}' +
+    '.el-switch{display:inline-flex;position:relative}.el-switch__core{display:inline-block;height:10px;border:1px solid #888}' +
+    '</style>';
   // Hidden boxes left over from earlier operations: a reset confirm, a timer dialog and a picker.
   function prerendered() {
     return '<div class="el-message-box__wrapper" style="display:none"><div class="el-message-box"><div class="el-message-box__content">' +
@@ -239,6 +261,131 @@ window.__fx = (function () {
     freeze(p);
     document.body.appendChild(p);
   }
+  // The clone dialog as the console renders it (read on the real page, 2026-10-03): the title in the header, a warning,
+  // the two checkboxes (the system disk ticked and disabled, the data disk free), the sparse-file switch with its tip,
+  // and in the footer the clones left today next to 取消 and 继续. The console marks a ticked box by the class is-checked
+  // on its label and by the input's checked property; aria-checked stays false either way. opts.clone changes one thing
+  // each (see mount).
+  function cloneHtml() {
+    var k = opts.clone;
+    function box(value, label, checked, disabled) {
+      var cls = (disabled ? ' is-disabled' : '') + (checked ? ' is-checked' : '');
+      return '<label class="el-checkbox el-checkbox--small' + cls + '"><span class="el-checkbox__input' + cls +
+        '" aria-checked="false"><span class="el-checkbox__inner"></span><input class="el-checkbox__original" type="checkbox" ' +
+        'aria-hidden="false"' + (disabled ? ' disabled' : '') + ' value="' + value + '"></span><span class="el-checkbox__label">' +
+        esc(label) + '</span></label>';
+    }
+    return '<div class="el-overlay"><div class="el-dialog copy-dialog" aria-modal="true" role="dialog" aria-label="克隆实例">' +
+      '<div class="el-dialog__header"><span class="el-dialog__title">' + esc(k.title) + '</span><button aria-label="close" ' +
+      'class="el-dialog__headerbtn" type="button"><i class="el-dialog__close el-icon el-icon-close"></i></button></div>' +
+      '<div class="el-dialog__body"><div class="el-alert el-alert--warning is-light" role="alert"><i class="el-alert__icon ' +
+      'el-icon-warning"></i><div class="el-alert__content"><span class="el-alert__title">' + esc(k.alert) + '</span></div></div>' +
+      '<div class="content"><div class="content"><span class="label">需要克隆的数据：</span><div class="value">' +
+      '<div class="el-checkbox-group" role="group" aria-label="checkbox-group">' +
+      box('copy_system_disk', '系统盘', k.sys !== 'unchecked', k.sys !== 'enabled') +
+      (k.noDisk ? '' : box('copy_data_disk', k.diskLabel, false, k.diskDisabled)) + '</div></div></div>' +
+      '<div class="content"><span class="label">优化稀疏文件拷贝：</span><div class="value"><div class="el-switch' +
+      (k.sparse ? ' is-checked' : '') + '" role="switch" aria-checked="' + (k.sparse ? 'true' : 'false') + '">' +
+      '<input class="el-switch__input" type="checkbox" name="" true-value="true" false-value="false"><span class="el-switch__core" ' +
+      'style="width: 40px;"><div class="el-switch__action"></div></span></div><div class="tips">' +
+      '开启则会在拷贝时对稀疏文件进行优化，一般可节省目标实例磁盘空间</div></div></div>' +
+      (k.note ? '<div class="content"><span>' + esc(k.note) + '</span></div>' : '') +
+      (k.extraInput ? '<div class="content"><input type="text" class="el-input__inner"></div>' : '') + '</div></div>' +
+      '<div class="el-dialog__footer"><div class="number">' + esc(k.left) + '</div><div><button class="el-button ' +
+      'el-button--default el-button--small" type="button"><span>取消</span></button><button class="el-button el-button--primary ' +
+      'el-button--small" type="button"><span>' + esc(k.go) + '</span></button></div></div></div></div>';
+  }
+  function openClone(r) {
+    var w = h(cloneHtml());
+    w.__fx = { kind: 'clone', key: r ? r.key : null };
+    var sys = w.querySelector('input[value="copy_system_disk"]');
+    if (sys) sys.checked = opts.clone.sys !== 'unchecked';
+    w.querySelector('.el-switch__input').checked = opts.clone.sparse;
+    freeze(w);
+    document.body.appendChild(w);
+    return w;
+  }
+  // The clone dialog opens now, after the next tick, or never (spec.boxDelay, as for the confirm boxes).
+  function cloneSoon(r) {
+    if (opts.boxDelay === 'never') return;
+    if (opts.boxDelay === 'later') { queue.push(function () { openClone(r); }); return; }
+    openClone(r);
+  }
+  // A checkbox of the clone dialog was ticked: the browser has already flipped the input; the console then marks the
+  // label and, for the data disk of a source with a paid expansion, shows the sentence about it under the checkboxes.
+  // opts.clone.lag puts both after the next tick.
+  function onChange(t) {
+    if (!(t.matches && t.matches('.copy-dialog input.el-checkbox__original'))) return;
+    function apply() {
+      var lab = t.closest('label');
+      [lab, t.parentNode].forEach(function (el) { el.classList.toggle('is-checked', t.checked); });
+      if (t.value !== 'copy_data_disk') return;
+      var val = lab.closest('.value');
+      var old = val.querySelector('span.color');
+      if (old) old.remove();
+      if (t.checked && opts.clone.expand) val.appendChild(h('<span class="color">' + esc(opts.clone.expand) + '</span>'));
+    }
+    if (opts.clone.lag) queue.push(apply); else apply();
+  }
+  // Clicks inside the clone dialog. A click on a checkbox label is counted once (the browser follows it with a click on
+  // the input, which is not counted). 取消 closes the dialog. 继续 closes it and the console goes on to its page for
+  // creating the new instance, so the instance list is gone from the page (opts.clone.ignoreGo: nothing happens).
+  function onCloneClick(t, dlg) {
+    var lab = t.closest('label.el-checkbox');
+    if (lab) { if (t.tagName !== 'INPUT') count('clone:' + norm(lab.textContent)); return; }
+    var b = t.closest('button');
+    if (!b) return;
+    var label = norm(b.textContent);
+    count('clone:' + label);
+    if (label === '取消') dlg.parentNode.remove();
+    if (label === '继续' && !opts.clone.ignoreGo) {
+      dlg.parentNode.remove();
+      var main = document.querySelector('#app .main');
+      if (main) main.innerHTML = '<div class="create-wrap"><div class="instance-info">DECOY-CREATE-PAGE</div></div>';
+    }
+  }
+  // The page's own data in the shape the console keeps it in (seen 2026-10-03, shapes only): the root vnode hangs on
+  // #app as _vnode; a vnode leads on through its component's subTree and through its children; the instance table is
+  // the component named ElTable whose root element is the table, and its props.data holds one object per row. Every
+  // value is fake. The password, the token and the phone number are decoys nothing may return, and every key read from
+  // a row's object is logged (dataReads). A second ElTable, rooted elsewhere, holds the same IDs with other addresses:
+  // it is not the instance table and nothing of it may be read (its keys are logged with the tag other:).
+  // spec.vnode: 'none' leaves _vnode out, 'two' roots a second ElTable at the instance table, 'nodata' gives the table
+  // no array, 'named' gives its component another name, 'suspense' puts it behind a suspense boundary, 'deep' puts it
+  // 250 levels down, 'loop' adds a node that holds itself twice (a walk without bounds would never end). A row's
+  // ssh: {host, port, cmd} replaces its address, and inData says how many objects carry its ID (default 1).
+  function logged(tag, fields) {
+    var o = {};
+    Object.keys(fields).forEach(function (k) {
+      Object.defineProperty(o, k, { enumerable: true, get: function () { dataReads.push(tag + k); return fields[k]; } });
+    });
+    return o;
+  }
+  function rowData(r, tag) {
+    var s = r.ssh || {};
+    var host = tag ? 'decoy.other.seetacloud.com' : s.host === undefined ? 'connect.fake' + r.key + '.seetacloud.com' : s.host;
+    var port = tag ? 1 : s.port === undefined ? 20000 + Number(r.key.slice(1)) : s.port;
+    return logged(tag, { uuid: r.id, machine_id: 'DECOY-MACHINE', status: r.state === '运行中' ? 'running' : 'DECOY-STATUS',
+                         proxy_host: host, ssh_port: port,
+                         ssh_command: !tag && s.cmd !== undefined ? s.cmd : 'ssh -p ' + port + ' root@' + host,
+                         root_password: 'DECOY-ROOTPW', jupyter_token: 'DECOY-TOKEN', phone: 'DECOY-PHONE' });
+  }
+  function vnodeTree(list, kind) {
+    var tableEl = document.querySelector('#app .instance-table');
+    var data = [];
+    list.forEach(function (r) { for (var n = r.inData; n > 0; n--) data.push(rowData(r, '')); });
+    function table(el, d, name) { return { type: { name: name }, props: { data: d }, subTree: { el: el, children: [] } }; }
+    var other = table(document.querySelector('#app .decoy-zone'), list.map(function (r) { return rowData(r, 'other:'); }), 'ElTable');
+    var mine = table(tableEl, kind === 'nodata' ? null : data, kind === 'named' ? 'InstanceTable' : 'ElTable');
+    var holder = kind === 'suspense' ? { suspense: { activeBranch: { component: mine } } } : { component: mine };
+    if (kind === 'deep') for (var n = 0; n < 250; n++) holder = { children: [holder] };
+    var kids = ['DECOY-TEXT', null, { component: other }, holder];
+    if (kind === 'two') kids.push({ component: table(tableEl, data, 'ElTable') });
+    if (kind === 'loop') { var loop = { children: [] }; loop.children.push(loop, loop); kids.push(loop); }
+    var view = { type: { name: 'InstanceList' }, subTree: { el: null, children: kids } };
+    return { component: { type: { name: 'App' }, subTree: { children: [{ children: [{ component: { type: { name: 'RouterView' },
+      subTree: { component: view } } }] }] } } };
+  }
   function ownerOfMenu(ul) {
     for (var k in rows) if (rows[k].menu === ul.id) return rows[k];
     return null;
@@ -277,6 +424,8 @@ window.__fx = (function () {
     openBox(kind, r, boxText(kind));
   }
   function onClick(t) {
+    var cl = t.closest && t.closest('.copy-dialog');
+    if (cl) return onCloneClick(t, cl);
     var b = t.closest && t.closest('button, li');
     if (!b) return;
     var label = norm(b.textContent);
@@ -294,6 +443,7 @@ window.__fx = (function () {
       var owner = ownerOfMenu(b.closest('ul.el-dropdown-menu'));
       count((owner ? owner.key : '?') + ':menu:' + label);
       if (owner && label === '无卡模式开机') { showMenu(owner, false); boxSoon('nogpu-on', owner); }
+      if (owner && label === CLONE_ITEM + '新') { showMenu(owner, false); cloneSoon(owner); }
       return;
     }
     var box = b.closest('.el-message-box__wrapper');
@@ -343,6 +493,7 @@ window.__fx = (function () {
       if (d) quiet(function () { hover(d, false); });
     }, true);
     document.addEventListener('click', function (e) { quiet(function () { onClick(e.target); }); }, false);
+    document.addEventListener('change', function (e) { quiet(function () { onChange(e.target); }); }, false);
     document.addEventListener('focus', function (e) { quiet(function () { onFocus(e.target); }); }, true);
     installed = true;
   }
@@ -363,24 +514,41 @@ window.__fx = (function () {
   // dupCol gives 操作 the column class of 状态; shift
   // moves the table out of the viewport; noTable leaves the instance table out. Every page also has a zone of decoy
   // elements that no handler serves, so a click on them shows only in the effect log of tests/console/run.js.
+  // The clone: cloneItem is the text of the menu's clone item in place of 克隆实例新, cloneTwice renders that item twice,
+  // menuItems replaces the menu's list. clone: {title, alert, left (the footer's whole text) or remaining (its number,
+  // default 10), go (the label of 继续), diskLabel, expandGb (the source's paid expansion: ticking the data disk then
+  // shows the sentence about it) or expandText (that sentence, whatever it says), sys: 'unchecked'|'enabled' (the system
+  // disk's box), sparse (the switch is on), noDisk, diskDisabled, note (one more line of text), extraInput, lag (a tick
+  // shows after the next tick), ignoreGo (继续 does nothing)}. vnode and the rows' ssh and inData shape the page's own
+  // data (see vnodeTree).
   function mount(spec) {
     return quiet(function () {
+      var cs = spec.clone || {};
       opts = { delay: spec.delay || 'now', menuDelay: spec.menuDelay || 'now', boxDelay: spec.boxDelay || 'now',
                pickerDelay: spec.pickerDelay || 'now', freeze: !!spec.freeze, ignore: !!spec.ignore, keepBox: !!spec.keepBox,
                pickerIgnore: !!spec.pickerIgnore, dialogNote: spec.dialogNote || '', dialogRootNote: spec.dialogRootNote || '',
                dupCol: !!spec.dupCol, noSpecCol: !!spec.noSpecCol, serverTime: spec.serverTime || '2026-10-01 23:58',
-               dialogTitle: spec.dialogTitle || '定时关机', editorSeconds: !!spec.editorSeconds };
+               dialogTitle: spec.dialogTitle || '定时关机', editorSeconds: !!spec.editorSeconds,
+               cloneItem: spec.cloneItem || '', cloneTwice: !!spec.cloneTwice, menuItems: spec.menuItems || null,
+               clone: { title: cs.title || '克隆实例', alert: cs.alert || '克隆后源实例不受影响，不会释放也不会清理数据',
+                        left: cs.left === undefined ? '今天剩余克隆次数：' + (cs.remaining === undefined ? 10 : cs.remaining) + '次' : cs.left,
+                        go: cs.go || '继续', diskLabel: cs.diskLabel || '数据盘',
+                        expand: cs.expandText || (cs.expandGb ? '源实例有扩容数据盘：' + cs.expandGb + 'GB 请扩容目标实例数据盘，以防拷贝失败' : ''),
+                        sys: cs.sys || '', sparse: !!cs.sparse, noDisk: !!cs.noDisk, diskDisabled: !!cs.diskDisabled,
+                        note: cs.note || '', extraInput: !!cs.extraInput, lag: !!cs.lag, ignoreGo: !!cs.ignoreGo } };
       queue = [];
       counts = {};
       rows = {};
       frozen = [];
+      dataReads = [];
       var list = spec.rows.map(function (s, i) {
         var r = { key: 'r' + i, id: s.id, state: s.state || '已关机', mode: s.mode || 'gpu', gpuFree: !!s.gpuFree,
                   timer: s.timer || null, release: s.release === undefined ? '14天23小时58分后释放' : s.release,
                   name: s.name || ('DECOY-NAME-' + i), extra: s.extra || '', ops: s.ops || null, disabled: !!s.disabled,
                   wrap: s.wrap || '', menu: nextId('dropdown-menu'), popper: nextId('el-popper'),
                   spec: s.spec === undefined ? 'RTX 0000 * 1卡' : s.spec, specExtra: !!s.specExtra,
-                  idle: s.idle === undefined ? '1/8' : s.idle, hostRef: s.hostRef || 'plain', host: nextId('host-popper') };
+                  idle: s.idle === undefined ? '1/8' : s.idle, hostRef: s.hostRef || 'plain', host: nextId('host-popper'),
+                  ssh: s.ssh || null, inData: s.inData === undefined ? 1 : s.inData };
         rows[r.key] = r;
         return r;
       });
@@ -395,6 +563,7 @@ window.__fx = (function () {
         '<input type="text" placeholder="选择日期" class="el-input__inner"><span>DECOY-ZONE</span></div>' +
         '<input type="password" style="display:none" value="DECOY-PW2"></div></div>' +
         list.map(popperHtml).join('') + list.map(hostHtml).join('') + (spec.boxes === 'prerendered' ? prerendered() : '');
+      if (spec.vnode !== 'none') document.getElementById('app')._vnode = vnodeTree(list, spec.vnode || '');
       if (!installed) install();
       mo.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
       violations = [];
@@ -461,6 +630,14 @@ window.__fx = (function () {
           'px;height:' + (r.height * 0.4) + 'px';
         document.body.appendChild(d); });
     },
+    // The same kind of cover over the top left of any element, above the dialogs.
+    coverCorner: function (el) {
+      quiet(function () { var r = el.getBoundingClientRect(); var d = document.createElement('div');
+        d.style.cssText = 'position:fixed;z-index:2600;left:' + r.left + 'px;top:' + r.top + 'px;width:' + (r.width * 0.4) +
+          'px;height:' + (r.height * 0.4) + 'px';
+        document.body.appendChild(d); });
+    },
+    cloneDialog: function () { var w = shown('.el-overlay'); return w ? w.querySelector('.copy-dialog') : null; },
     picker: function () { return shown('.el-picker-panel'); },
     editor: function () { var w = shown('.el-overlay-dialog'); return w ? w.querySelector('.el-date-editor input') : null; },
     row: function (id) { return rowEl(keyOf(id)); },
@@ -471,9 +648,19 @@ window.__fx = (function () {
       var r = rows[keyOf(id)]; var p = r && document.getElementById(r.popper);
       return !!p && p.style.display !== 'none' && p.style.opacity !== '0';
     },
-    shownKind: function () { return shown('.el-message-box__wrapper') ? 'box' : shown('.el-overlay-dialog') ? 'dialog' : null; },
+    shownKind: function () {
+      return shown('.el-message-box__wrapper') ? 'box' : shown('.el-overlay-dialog') ? 'dialog' : shown('.el-overlay') ? 'clone' : null;
+    },
+    // The keys read from the objects of the page's own data since the last call, in the order they were read.
+    dataReads: function () { var d = dataReads; dataReads = []; return d; },
+    // One more clone dialog; or the shown one replaced by a new one that looks the same.
+    openClone: function () { quiet(function () { openClone(null); }); },
+    swapClone: function () {
+      quiet(function () { var w = shown('.el-overlay'); var f = w.__fx; w.remove(); openClone(f.key ? rows[f.key] : null); });
+    },
     describe: function (el) {
       var t = norm(el.textContent);
+      if (el.closest('.copy-dialog')) return 'clone:' + (el.tagName === 'INPUT' ? 'input' : t);
       var tr = el.closest('tr.el-table__row');
       if (tr) return tr.getAttribute('data-fx') + ':' + t;
       if (el.tagName === 'LI') { var o = ownerOfMenu(el.closest('ul.el-dropdown-menu')); return (o ? o.key : '?') + ':menu:' + t; }

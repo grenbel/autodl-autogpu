@@ -1055,7 +1055,7 @@ def sent_args(fake, i=-1):
 
 def test_version_prints_the_ctl_version(capsys):
     assert ctl.main(["version"]) == 0
-    assert capsys.readouterr().out.strip() == "0.8.0"
+    assert capsys.readouterr().out.strip() == "0.9.0"
 
 
 def test_a_usage_error_is_exit_1_not_2(monkeypatch):
@@ -1767,14 +1767,14 @@ def test_a_hanging_nvidia_smi_does_not_hold_the_probes(tmp_path):
 def test_launcher_skips_a_python_that_fails(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTODL_TEST_REAL_PY", sys.executable)
     r = _launch(tmp_path, "version", python=REAL_PY)
-    assert r.returncode == 0 and r.stdout.decode().strip() == "0.8.0", r.stderr.decode(errors="replace")
+    assert r.returncode == 0 and r.stdout.decode().strip() == "0.9.0", r.stderr.decode(errors="replace")
 
 
 @git_bash_only
 def test_launcher_prefers_python3(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTODL_TEST_REAL_PY", sys.executable)
     r = _launch(tmp_path, "version", python3=REAL_PY)   # python fails here: only python3 can answer
-    assert r.returncode == 0 and r.stdout.decode().strip() == "0.8.0", r.stderr.decode(errors="replace")
+    assert r.returncode == 0 and r.stdout.decode().strip() == "0.9.0", r.stderr.decode(errors="replace")
 
 
 @git_bash_only
@@ -1821,7 +1821,13 @@ BOUND_COMMANDS = {   # every command that takes an alias, but for check, wait an
     "revive": [], "run": ["t1", "--cmd", "true"], "quiet": ["t1", "10m", "--reason", "x"], "tail": ["t1"],
     "keep": ["10m", "--reason", "x"], "off-when-done": ["--reason", "x"], "off-now": ["--reason", "x", "--wait", "0s"],
     "off-raw": ["--reason", "x", "--wait", "0s"], "deadline": ["1h"],
+    "job": ["t1", "--req", "1111222233334444"], "manifest": [], "spec": [],
+    "ticket read": [],   # of the ticket commands the one that needs no clone record; all five take the alias the same way
 }
+
+
+def _argv(name: str) -> list:
+    return [*name.split(), "autodl-test", *BOUND_COMMANDS[name]]
 
 
 def _verified(alias="autodl-test", iid=INSTANCE):
@@ -1841,16 +1847,23 @@ def test_every_command_with_an_alias_is_bound_to_an_instance_but_three():
     with_alias = {name: sp for name, sp in _subcommands().items() if any(a.dest == "alias" for a in sp._actions)}
     unbound = {name for name, sp in with_alias.items() if sp.get_default("func") in ctl.UNBOUND}
     assert unbound == {"check", "wait", "doctor"}
-    assert set(with_alias) - unbound == set(BOUND_COMMANDS) | {"pull", "push"}   # the tests below cover each of them
+    top = {k for k in BOUND_COMMANDS if " " not in k}
+    assert set(with_alias) - unbound == top | {"pull", "push"}   # the tests below cover each of them
     for name in set(with_alias) - unbound:   # each can be told its instance, without the local record
         assert any(a.dest == "instance" for a in with_alias[name]._actions), name
+    # the ticket's commands sit one level down: every one of them takes the alias and the instance the same way
+    import argparse
+    nested = next(a for a in _subcommands()["ticket"]._actions if isinstance(a, argparse._SubParsersAction)).choices
+    assert set(nested) == {"write", "read", "extend", "start", "clear"}
+    for name, sp in nested.items():
+        assert {"alias", "instance"} <= {a.dest for a in sp._actions} and sp.get_default("func") not in ctl.UNBOUND, name
 
 
 @pytest.mark.parametrize("name", sorted(BOUND_COMMANDS))
 def test_a_bound_command_checks_the_host_name_in_every_remote_shell(monkeypatch, capsys, clock, name):
     fake = use(monkeypatch, {}, bound=True)
     _verified()
-    ctl.main([name, "autodl-test", *BOUND_COMMANDS[name]])
+    ctl.main(_argv(name))
     assert fake.calls and fake.checked == [INSTANCE] * len(fake.calls), (fake.checked, [c[0][-1][:80] for c in fake.calls])
     for argv, _ in fake.calls:   # right after the start marker, before anything of the command itself
         assert argv[-1].startswith(ctl.MARKER_PREFIX + ctl.host_guard(INSTANCE))
@@ -1866,7 +1879,7 @@ def test_the_host_check_ends_the_remote_shell_before_the_command():
 @pytest.mark.parametrize("name", sorted(BOUND_COMMANDS))
 def test_an_alias_nobody_verified_is_refused_before_any_connection(monkeypatch, capsys, name):
     fake = use(monkeypatch, {}, bound=True)
-    assert ctl.main([name, "autodl-test", *BOUND_COMMANDS[name]]) == ctl.EXIT_MISMATCH
+    assert ctl.main(_argv(name)) == ctl.EXIT_MISMATCH
     res = json.loads(capsys.readouterr().out)
     assert fake.calls == [] and "ctl check autodl-test --instance" in res["error"]
 
@@ -1875,7 +1888,7 @@ def test_an_alias_nobody_verified_is_refused_before_any_connection(monkeypatch, 
 def test_a_command_that_reaches_another_host_does_nothing_and_exits_13(monkeypatch, capsys, clock, name):
     fake = use(monkeypatch, {}, default=WRONG, bound=True)
     _verified()
-    assert ctl.main([name, "autodl-test", *BOUND_COMMANDS[name]]) == ctl.EXIT_MISMATCH
+    assert ctl.main(_argv(name)) == ctl.EXIT_MISMATCH
     res = json.loads(capsys.readouterr().out)
     assert len(fake.calls) == 1, [c[0][-1][:80] for c in fake.calls]   # nothing follows: no retry, no next step, no wait
     assert res["instance_match"] is False and res["hostname"] == f"autodl-container-{OTHER}" and res["instance"] == INSTANCE

@@ -3,11 +3,19 @@
 // published file (reference/console.md says how), then call fn(): the API registers itself as window.__autodl, and a
 // second call in the same page returns that same API, so the page never has two scripts with separate state. A reload
 // or navigation drops the script and its contexts; put it into the page again (reference/console.md, section 2).
-// It only reads the page, apart from these effects on elements it has just checked: click() on the fixed buttons and
-// menu items of its action table, focus() on the timer inputs (plus a focus event when the page has no focus of its
-// own), and mouseenter or mouseleave on the target row's 更多 trigger. It never writes the DOM, navigates, sends
-// requests, or reads cookies or storage. It returns only the fields listed in reference/console.md and the text of
-// dialogs and prompts.
+// Two copies of this file go into the page, both made by tests/console/paste_copy.py. reference/console.min.js is the
+// everyday copy: it leaves out everything between the comment lines clone-begin and clone-end. reference/console-clone.min.js
+// keeps it, and is loaded in place of the everyday copy, after a reload, when an instance is to be cloned.
+// The script only reads the page, apart from these effects on elements it has just checked: click() on the fixed
+// buttons and menu items of its action table; focus() on the timer inputs (plus a focus event when the page has no
+// focus of its own); mouseenter or mouseleave on the target row's 更多 trigger; and, in the copy for cloning, click() on
+// the clone's menu item, on the label of the data disk's checkbox in the clone dialog and on its 继续. It never writes
+// the DOM, navigates, sends requests, or reads cookies or storage. It returns only the fields listed in
+// reference/console.md and reference/clone.md and the text of dialogs and prompts.
+// What it reads is what the page shows. The one exception is in the copy for cloning: sshAddress reads, in the page's
+// own data behind the instance table, three keys of the one object that carries the given instance ID (its SSH host,
+// port and command) and returns the host and the port. Of the other objects there it reads only the key that holds
+// their ID, and no other key of any object.
 // One operation at a time. A start function clicks the row's button; bindDialog binds the dialog that opened and, for a
 // confirm box, returns the prepared copy; the timer goes on with openTimerPicker, bindTimerPicker, focusTimerInput,
 // readTimer, confirmTimerPicker and prepareTimer, which returns the prepared copy; confirm or confirmTimerDialog is the
@@ -15,10 +23,15 @@
 // anything else only a reload of the page lets a new one start. Keep the prepared copy: after a final confirm use only
 // settle, with the copy if the page reloaded or the call did not return. A failing check returns {ok: false, refused}
 // and clicks nothing.
+// Cloning an instance is an operation of its own (reference/clone.md): startClone clicks the menu item, bindCloneDialog
+// binds the dialog and reads it again after a tick, tickCloneDataDisk ticks the data disk, continueClone clicks 继续 and
+// ends the operation, because the console then leaves the instance list for the page that creates the new instance;
+// dismiss gives the clone up. These functions go by a table of fixed texts: they click only an element whose whole
+// text is one of three of them, and they bind the dialog only if every text it shows is in the table.
 // The offline test is tests/console/run.js; the mode 'offline-test' works only on its test page.
 (function (mode) {
   'use strict';
-  var VERSION = 7;
+  var VERSION = 9;
   var BRAND = 'autodl-gpu console.js';
   var TEST = mode === 'offline-test';
   var ID_SHAPE = TEST ? /^(abcd|wxyz|mnop|qrst|efgh)\d{6}-\d{4}[a-z]{4}$/ : /^[0-9a-z]{10}-[0-9a-z]{8}$/;
@@ -210,8 +223,16 @@
     var v = textOf(ls[0].nextElementSibling);
     return /^\d+\/\d+$/.test(v) ? v : null;
   }
+  // Where the row is, as its ID cell shows it: the text of the one region there (the region and the host, as in
+  // "某区 / 123机"), which is what a user finds the row by. Null unless that cell holds exactly one region.
+  function place(tr) {
+    var c = tr.cells[0];
+    var rs = c ? list(c.querySelectorAll('.region')) : [];
+    return rs.length === 1 ? visibleText(rs[0]) || null : null;
+  }
   // A row's status (the first text of the 状态 cell), mode, GPU充足, the host's free GPUs, timer, release countdown,
-  // spec text (the one text of the 规格详情 cell outside its buttons) with the GPU count it ends with, and button texts.
+  // spec text (the one text of the 规格详情 cell outside its buttons) with the GPU count it ends with, button texts,
+  // and its place.
   function readRow(tr, cols) {
     var st = cell(tr, cols.state);
     var tm = cell(tr, cols.timer);
@@ -230,7 +251,7 @@
     return { state: state, mode: s.indexOf('无卡模式') >= 0 ? 'nogpu' : state === '已关机' ? null : 'gpu',
              gpuFree: s.indexOf('GPU充足') >= 0, gpuIdle: gpuIdle(tr), timer: timer.length ? timer[0] : null,
              release: release.length ? release[0] : null, spec: spec, gpus: cards ? Number(cards[1]) : null,
-             buttons: buttonsIn(tm).concat(buttonsIn(op)) };
+             buttons: buttonsIn(tm).concat(buttonsIn(op)), place: place(tr) };
   }
   // The deepest elements whose text holds id, skipping scripts and styles; an element whose own text holds id counts
   // even when a child holds it as well.
@@ -283,7 +304,7 @@
     if (tb.why) return [];
     return tb.rows.map(function (tr) {
       var i = readRow(tr, tb.cols) || { state: '', mode: null, gpuFree: false, gpuIdle: null, timer: null, release: null, spec: null,
-                                        gpus: null, buttons: [] };
+                                        gpus: null, buttons: [], place: null };
       return { tr: tr, id: rowId(tr), info: i };
     });
   }
@@ -344,7 +365,7 @@
     if (t.why) return no(t.why);
     var i = t.info;
     return { ok: true, id: id, state: i.state, mode: i.mode, gpuFree: i.gpuFree, gpuIdle: i.gpuIdle, timer: i.timer, release: i.release,
-             spec: i.spec, gpus: i.gpus, buttons: i.buttons };
+             spec: i.spec, gpus: i.gpus, buttons: i.buttons, place: i.place };
   }
   function rows() {
     var g = gate();
@@ -352,7 +373,7 @@
     return allRows().map(function (r) {
       var i = r.info;
       return { id: r.id, state: i.state, mode: i.mode, gpuFree: i.gpuFree, gpuIdle: i.gpuIdle, timer: i.timer, release: i.release,
-               spec: i.spec, gpus: i.gpus, buttons: i.buttons };
+               spec: i.spec, gpus: i.gpus, buttons: i.buttons, place: i.place };
     });
   }
   function snapshot() {
@@ -467,6 +488,9 @@
   function bindDialog(key) {
     var c = ctxOf(key);
     if (c.why) return no(c.why);
+    // clone-begin
+    if (c.op === 'clone') return no('a clone context is bound with bindCloneDialog');
+    // clone-end
     if (c.stage !== 'opened') return no(stageWhy(c));
     var g = gate();
     if (g) return no(g);
@@ -821,7 +845,8 @@
     return Object.freeze(s);
   }
   // One script per page: the first call registers the API as window.__autodl; a later call gets that same API back if it
-  // is this brand, version and mode, and otherwise a shell that refuses everything until the page is reloaded.
+  // is this brand, version and mode and has the clone's functions whenever the caller's copy has them; otherwise a
+  // shell that refuses everything until the page is reloaded.
   function register(api) {
     if (modeError) return api;
     var prior = window.__autodl;
@@ -829,11 +854,13 @@
       window.__autodl = api;
       return api;
     }
-    if (prior.brand === BRAND && prior.version === VERSION && prior.mode === api.mode) return prior;
+    if (prior.brand === BRAND && prior.version === VERSION && prior.mode === api.mode && (prior.clone === true || api.clone !== true)) {
+      return prior;
+    }
     return shell('another copy or version of the page script is loaded in this page, or window.__autodl is taken; reload the page');
   }
 
-  return register(Object.freeze({
+  var built = {
     brand: BRAND,
     version: VERSION,
     mode: modeError ? 'none' : TEST ? 'offline-test' : 'live',
@@ -860,5 +887,282 @@
     confirmTimerDialog: confirmTimerDialog,
     dismiss: dismiss,
     settle: settle
-  }));
+  };
+
+  // clone-begin
+  // ---- the clone: everything from here to clone-end is left out of the everyday copy (reference/console.min.js) and
+  // kept in the copy that is loaded to clone an instance (reference/console-clone.min.js) ----
+  // The clone goes by this table and not by the refusal list: the menu item, and every text the clone dialog shows, in
+  // page order. head ends with the data disk's checkbox; the sentence about the source's paid expansion may follow it.
+  var CLONE = {
+    item: '克隆实例新',
+    title: '克隆实例',
+    disk: '数据盘',
+    go: '继续',
+    head: ['克隆实例', '克隆后源实例不受影响，不会释放也不会清理数据', '需要克隆的数据：', '系统盘', '数据盘'],
+    expand: /^源实例有扩容数据盘：(\d+)GB 请扩容目标实例数据盘，以防拷贝失败$/,
+    tail: ['优化稀疏文件拷贝：', '开启则会在拷贝时对稀疏文件进行优化，一般可节省目标实例磁盘空间'],
+    left: /^今天剩余克隆次数：(\d+)次$/,
+    buttons: ['取消', '继续']
+  };
+  var CLONE_CLICKS = ['克隆实例新', '数据盘', '继续'];
+  // A host's ID is the part of an instance ID before the hyphen.
+  var HOST_SHAPE = TEST ? /^(abcd|wxyz|mnop|qrst|efgh)\d{6}$/ : /^[0-9a-z]{10}$/;
+  var DIGEST = /^\d{1,3}:[0-9a-f]{8}$/;
+  var HOST_NAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+  var SSH_DOMAIN = /\.(seetacloud|autodl)\.com$/;
+  // The clone's own click: only on an element whose whole text is one of the clone's three fixed texts.
+  function pressClone(el, text) {
+    if (CLONE_CLICKS.indexOf(text) < 0 || textOf(el) !== text) throw new Error('not a click of the clone');
+    el.click();
+  }
+  // Opens a clone: the row is stopped and shows no GPU充足 (with a free GPU the thing to do is to power it on), its spec
+  // and GPU count can be read, its 更多 menu is open (menu(ID)) and holds one item whose whole text is 克隆实例新.
+  function startClone(id) {
+    var g = gate();
+    if (g) return no(g);
+    if (active) return no(busyWhy());
+    var t = target(id);
+    if (t.why) return no(t.why);
+    var sane = rowsSane();
+    if (sane) return no(sane);
+    if (dialogs().length || pickers().length) return no('a dialog or picker is already open; nothing is clicked while it shows');
+    var i = t.info;
+    if (i.state !== '已关机') return no('the state is ' + i.state + ', not 已关机');
+    if (i.gpuFree) return no('this row shows GPU充足: power the instance on instead of cloning it');
+    if (i.spec === null || !(i.gpus >= 1)) return no('the spec or GPU count of this row cannot be read from its 规格详情');
+    var m = rowMenu(t.tr);
+    if (m.why) return no(m.why);
+    if (otherMenuOpen(m)) return no('another 更多 menu is open');
+    if (!menuOpen(m)) return no('the 更多 menu of this row is not open; call menu(ID) first');
+    var cands = list(m.menu.querySelectorAll('li.el-dropdown-menu__item')).filter(function (el) { return textOf(el) === CLONE.item; });
+    if (cands.length !== 1) return no('no single ' + CLONE.item + ' in the menu of this row');
+    var why = interactable(cands[0]);
+    if (why) return no('the ' + CLONE.item + ' ' + why);
+    seq += 1;
+    var c = { key: nonce + '-' + seq, op: 'clone', id: id, stage: 'opened', row: t.tr, before: entry(id, i), all: canonAll(),
+              others: hash(canonAll(t.tr)), spec: i.spec, gpus: i.gpus, dialog: null, picker: null, text: null, expect: null,
+              editor: null };
+    contexts[c.key] = c;
+    active = c.key;
+    pressClone(cands[0], CLONE.item);
+    return { ok: true, ctx: c.key, stage: 'opened' };
+  }
+  // A clone context at one of the given stages, or {why}.
+  function cloneCtx(key, stages) {
+    var c = ctxOf(key);
+    if (c.why) return c;
+    if (c.op !== 'clone') return { why: 'not a clone context' };
+    if (stages.indexOf(c.stage) < 0) return { why: stageWhy(c) };
+    var g = gate();
+    if (g) return { why: g };
+    return c;
+  }
+  // The texts a user may see in el, one for each element that has text of its own, in page order.
+  function texts(el) {
+    return [el].concat(list(el.querySelectorAll('*'))).filter(function (x) { return ownText(x) !== '' && shown(x); }).map(ownText);
+  }
+  // Reads the clone dialog d. Every text it shows is an entry of the fixed table, each once and in order; the system
+  // disk's checkbox is ticked and disabled and the data disk's is enabled; there is no input besides these two and the
+  // sparse-file switch, which is off; 取消 and 继续 are alone in the footer. Returns {why}, or {pending} while the page
+  // has not finished marking a tick, or what the dialog says.
+  function readCloneDialog(d) {
+    var segs = texts(d);
+    var fixed = CLONE.head.concat(CLONE.tail, CLONE.buttons);
+    for (var k = 0; k < segs.length; k++) {
+      if (fixed.indexOf(segs[k]) < 0 && !CLONE.expand.test(segs[k]) && !CLONE.left.test(segs[k])) {
+        return { why: 'the 克隆实例 dialog shows text that is not in the fixed table: ' + segs[k].slice(0, 80) };
+      }
+    }
+    var x = segs.length === 11 ? CLONE.expand.exec(segs[5]) : null;
+    var rest = x ? segs.slice(0, 5).concat(segs.slice(6)) : segs;
+    var left = rest.length === 10 ? CLONE.left.exec(rest[7]) : null;
+    if (!left || rest.join('\n') !== CLONE.head.concat(CLONE.tail, [rest[7]], CLONE.buttons).join('\n')) {
+      return { why: 'the 克隆实例 dialog does not show the texts of the fixed table once each and in order' };
+    }
+    var boxes = list(d.querySelectorAll('label.el-checkbox input[type="checkbox"]'));
+    if (boxes.length !== 2 || boxes[0].value !== 'copy_system_disk' || boxes[1].value !== 'copy_data_disk') {
+      return { why: 'the dialog has no 系统盘 and 数据盘 checkboxes of its own' };
+    }
+    var sysLabel = boxes[0].closest('label');
+    var diskLabel = boxes[1].closest('label');
+    if (textOf(sysLabel) !== CLONE.head[3] || textOf(diskLabel) !== CLONE.disk) {
+      return { why: 'the checkboxes of the dialog are not labelled 系统盘 and 数据盘' };
+    }
+    var sw = list(d.querySelectorAll('.el-switch'));
+    var swIn = sw.length === 1 ? list(sw[0].querySelectorAll('input')) : [];
+    if (swIn.length !== 1 || list(d.querySelectorAll('input')).length !== 3) {
+      return { why: 'the dialog has inputs other than its two checkboxes and its one switch' };
+    }
+    if (!boxes[0].checked || !boxes[0].disabled || !sysLabel.classList.contains('is-checked') || !sysLabel.classList.contains('is-disabled')) {
+      return { why: 'the 系统盘 checkbox is not ticked and fixed' };
+    }
+    if (boxes[1].disabled || diskLabel.classList.contains('is-disabled')) return { why: 'the 数据盘 checkbox is disabled' };
+    if (sw[0].getAttribute('aria-checked') !== 'false' || sw[0].classList.contains('is-checked') || swIn[0].checked) {
+      return { why: 'the sparse-file switch is not off' };
+    }
+    var foot = one(d, '.el-dialog__footer');
+    if (!foot || buttonsIn(foot).join('\n') !== CLONE.buttons.join('\n')) return { why: 'the dialog footer does not hold 取消 and 继续 alone' };
+    if (boxes[1].checked !== diskLabel.classList.contains('is-checked')) return { pending: 'the 数据盘 checkbox is still changing' };
+    return { dataDisk: boxes[1].checked, expandGb: x ? Number(x[1]) : 0, remaining: Number(left[1]), diskLabel: diskLabel };
+  }
+  // Binds the clone dialog, or reads it again once it is bound (after tickCloneDataDisk). The only dialog showing must
+  // be the one titled 克隆实例, fully shown, and pass readCloneDialog. A clone dialog that fails that reading is recorded
+  // all the same, at blocked, so that dismiss can close it; any other dialog is left alone and goes away with a reload.
+  // Returns whether the data disk is ticked, the source's paid expansion in GB (0 without the sentence about it), the
+  // clones left today, and the row's spec and GPU count as read at the start.
+  function bindCloneDialog(key) {
+    var c = cloneCtx(key, ['opened', 'clone-bound']);
+    if (c.why) return no(c.why);
+    var r;
+    if (c.stage === 'opened') {
+      var ds = dialogs();
+      if (ds.length === 0) return { ok: false, pending: true, why: 'no dialog has shown yet' };
+      if (ds.length > 1) return no('more than one dialog is showing (' + ds.length + ')');
+      var s = settled(ds[0]);
+      if (s) return { ok: false, pending: true, why: 'the dialog ' + s };
+      if (isBox(ds[0]) || dialogText(ds[0]) !== CLONE.title) return no('the dialog showing is not the 克隆实例 dialog');
+      r = readCloneDialog(ds[0]);
+      if (!r.pending) {
+        c.dialog = ds[0];
+        c.text = CLONE.title;
+        c.stage = r.why ? 'blocked' : 'clone-bound';
+      }
+    } else {
+      var why = recheckDialog(c);
+      r = why ? { why: why } : readCloneDialog(c.dialog);
+    }
+    if (r.pending) return { ok: false, pending: true, why: r.pending };
+    if (r.why) return no(r.why);
+    return { ok: true, stage: 'clone-bound', kind: 'dialog', text: c.text, dataDisk: r.dataDisk, expandGb: r.expandGb,
+             remaining: r.remaining, spec: c.spec, gpus: c.gpus };
+  }
+  // A clone context whose bound dialog still passes recheckDialog and readCloneDialog: {c, r}; otherwise {why} or {pending}.
+  function cloneRead(key) {
+    var c = cloneCtx(key, ['clone-bound']);
+    if (c.why) return c;
+    var why = recheckDialog(c);
+    if (why) return { why: why };
+    var r = readCloneDialog(c.dialog);
+    return r.why || r.pending ? r : { c: c, r: r };
+  }
+  // Ticks the data disk: clicks the label of its checkbox, and only while it is not ticked.
+  function tickCloneDataDisk(key) {
+    var x = cloneRead(key);
+    if (x.pending) return { ok: false, pending: true, why: x.pending };
+    if (x.why) return no(x.why);
+    if (x.r.dataDisk) return no('数据盘 is already ticked');
+    var why = interactable(x.r.diskLabel);
+    if (why) return no('the 数据盘 checkbox ' + why);
+    pressClone(x.r.diskLabel, CLONE.disk);
+    return { ok: true, stage: 'clone-bound' };
+  }
+  // The clone's last step in the instance list: the dialog passes every check again, the data disk is ticked, a clone
+  // is left today, and the row is as at the start and still shows no GPU充足. Clicks 继续 and ends the operation: the
+  // console then leaves the instance list for the page that creates the new instance, which has a script of its own.
+  function continueClone(key) {
+    var x = cloneRead(key);
+    if (x.pending) return { ok: false, pending: true, why: x.pending };
+    if (x.why) return no(x.why);
+    var c = x.c;
+    if (!x.r.dataDisk) return no('数据盘 is not ticked; call tickCloneDataDisk first');
+    if (x.r.remaining < 1) return no('no clone is left today (今天剩余克隆次数 is 0)');
+    var b = buttonIn(c.dialog, '.el-dialog__footer', CLONE.go);
+    if (!b) return no('no single 继续 in the dialog');
+    var why = interactable(b);
+    if (why) return no('the 继续 ' + why);
+    why = recheckRow(c);
+    if (why) return no(why);
+    if (target(c.id).info.gpuFree) return no('this row now shows GPU充足: dismiss the dialog and power the instance on instead');
+    c.stage = 'continued';
+    if (active === c.key) active = null;
+    pressClone(b, CLONE.go);
+    return { ok: true, stage: 'continued', dataDisk: true, expandGb: x.r.expandGb, remaining: x.r.remaining };
+  }
+  // Read-only: a digest of each row's instance ID, never an ID. Taken before a creation, it tells afterwards which rows
+  // are new.
+  function idDigests() {
+    var g = gate();
+    if (g) return no(g);
+    var sane = rowsSane();
+    if (sane) return no(sane);
+    return { ok: true, digests: allRows().map(function (r) { return hash(r.id); }) };
+  }
+  // Read-only, after a creation: the rows whose ID has no digest in digests, begins with hostId and a hyphen, and whose
+  // spec text is spec. With id, the ID the platform gave for the new instance, only that row counts, under the same
+  // three conditions. Answers the candidates' ID, state, mode and timer, and nothing of any other row.
+  function findCreated(digests, hostId, spec, id) {
+    var g = gate();
+    if (g) return no(g);
+    if (!Array.isArray(digests) || !digests.length || !digests.every(function (x) { return typeof x === 'string' && DIGEST.test(x); })) {
+      return no('digests must be the list that idDigests returned before the creation');
+    }
+    if (typeof hostId !== 'string' || !HOST_SHAPE.test(hostId)) return no('not a host ID' + (TEST ? ' of the offline test' : ''));
+    if (typeof spec !== 'string' || spec === '') return no('spec must be the 规格详情 text of the source row');
+    var given = id !== undefined && id !== null;
+    if (given && (typeof id !== 'string' || !ID_SHAPE.test(id))) return no('not an instance ID' + (TEST ? ' of the offline test' : ''));
+    var sane = rowsSane();
+    if (sane) return no(sane);
+    var found = allRows().filter(function (r) {
+      return digests.indexOf(hash(r.id)) < 0 && r.id.indexOf(hostId + '-') === 0 && r.info.spec === spec && (!given || r.id === id);
+    });
+    return { ok: true, count: found.length, rows: found.map(function (r) {
+      return { id: r.id, state: r.info.state, mode: r.info.mode, timer: r.info.timer };
+    }) };
+  }
+  // The SSH host and port of a running instance, from the page's own data: the console shows the login command masked.
+  // This is the only function that reads that data. The way to it is fixed: the root vnode on #app, down through each
+  // component's subTree and each node's children, to the component named ElTable whose root element is the instance
+  // table; its props.data holds an object per row. Exactly one object's uuid must be id; of it three keys are read, and
+  // they must agree: a host name under seetacloud.com or autodl.com, a port number, and the command that names both. A
+  // refusal says which check failed and never carries a value that was read.
+  function sshAddress(id) {
+    var g = gate();
+    if (g) return no(g);
+    var t = target(id);
+    if (t.why) return no(t.why);
+    if (t.info.state !== '运行中') return no('the state is ' + t.info.state + ', not 运行中');
+    var el = t.tr.closest('.el-table');
+    var app = document.getElementById('app');
+    var seen = 0;
+    var tables = [];
+    function walk(v, depth) {
+      if (!v || typeof v !== 'object' || depth > 200 || seen >= 200000) return;
+      seen += 1;
+      var c = v.component;
+      if (c && typeof c === 'object') {
+        if (c.type && c.type.name === 'ElTable' && c.subTree && c.subTree.el === el) tables.push(c);
+        walk(c.subTree, depth + 1);
+      }
+      if (Array.isArray(v.children)) for (var k = 0; k < v.children.length; k++) walk(v.children[k], depth + 1);
+      if (v.suspense && v.suspense.activeBranch) walk(v.suspense.activeBranch, depth + 1);
+    }
+    walk(app && app._vnode, 0);
+    var data = tables.length === 1 && seen < 200000 && tables[0].props ? tables[0].props.data : null;
+    if (!Array.isArray(data)) return no('the page data of the instance table was not found; the console may have changed');
+    var mine = data.filter(function (r) { return !!r && typeof r === 'object' && r.uuid === id; });
+    if (mine.length === 0) return no('the page data holds no entry for this instance ID');
+    if (mine.length > 1) return no('the page data holds this instance ID more than once');
+    var host = mine[0].proxy_host;
+    var port = mine[0].ssh_port;
+    var cmd = mine[0].ssh_command;
+    if (typeof host !== 'string' || host.length > 253 || !HOST_NAME.test(host) || !SSH_DOMAIN.test(host)) {
+      return no('the SSH host in the page data is not a host name under seetacloud.com or autodl.com');
+    }
+    if (typeof port !== 'number' || port % 1 !== 0 || port < 1 || port > 65535) return no('the SSH port in the page data is not a port number');
+    if (cmd !== 'ssh -p ' + port + ' root@' + host) return no('the SSH command in the page data does not agree with its host and port');
+    return { ok: true, id: id, host: host, port: port };
+  }
+  NAMES = NAMES.concat(['startClone', 'bindCloneDialog', 'tickCloneDataDisk', 'continueClone', 'idDigests', 'findCreated', 'sshAddress']);
+  built.clone = true;
+  built.startClone = startClone;
+  built.bindCloneDialog = bindCloneDialog;
+  built.tickCloneDataDisk = tickCloneDataDisk;
+  built.continueClone = continueClone;
+  built.idDigests = idDigests;
+  built.findCreated = findCreated;
+  built.sshAddress = sshAddress;
+  // clone-end
+
+  return register(Object.freeze(built));
 })

@@ -1,7 +1,10 @@
 """The calibration helpers in tests/live. disk_write.sh runs on the instance and is tested in WSL;
 queries.sh and sshread.sh run on this machine in Git Bash and are tested there against stub ssh and ctl
-programs; export_logs.py is plain Python. Where WSL and Git Bash come from: tests/local_tools.py. Nothing
+programs; export_logs.py is plain Python; ticket_probe.py is tested as tests/test_ticket.py tests the ticket, against
+a temporary directory in WSL that plays the instance. Where WSL and Git Bash come from: tests/local_tools.py. Nothing
 here connects to an instance: every ssh is a stub."""
+import hashlib
+import json
 import os
 import shlex
 import subprocess
@@ -455,3 +458,149 @@ def test_export_usage_errors(tmp_path):
     assert r.returncode == 2 and b"usage" in r.stderr, r.stderr
     r = _export(tmp_path / "no-such-dir", tmp_path / "repo")
     assert r.returncode == 2 and b"is not a directory" in r.stderr and not (tmp_path / "repo").exists(), r.stderr
+
+
+# ---- ticket_probe.py: a ticket with no clone record, for the live check that a ticket nobody takes over shuts its
+# instance down (plan task 11.14). ssh is led into a temporary directory that plays the instance ----
+sys.path.insert(0, str(LIVE))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import autodl_ctl as ctl  # noqa: E402
+import ticket_probe  # noqa: E402
+from test_ticket import HELD, PREFIX, STOP_STUB, UNAME_STUB, Box, _have, _sh  # noqa: E402
+
+PROBE_ID = "ffff000000-0000ffff"
+PROBE_MARK = "0123456789abcdef"
+needs_ticket_bash = pytest.mark.skipif(not _have(), reason="needs bash with flock, setsid and sha256sum (on Windows: "
+                                                          f"in {local_tools.wsl_name()})")
+
+
+@pytest.fixture
+def probe_box(monkeypatch):
+    r = _sh("mktemp", "-d", "/tmp/autodl-probe-test.XXXXXX")
+    d = r.stdout.decode().strip()
+    assert r.returncode == 0 and d.startswith("/tmp/autodl-probe-test.")
+    b = Box(d)
+    b.put("bin/uname", UNAME_STUB, "755")
+    b.put("bin/stop", STOP_STUB, "755")
+    b.host(PROBE_ID)
+    b.sent = []
+
+    def run(argv, **kw):   # what ssh would reach: the box, whose uname -n answers the host name the test wrote
+        b.sent.append(argv[-2])
+        pre = f'uname() {{ if [ "$1" = -n ]; then cat {d}/hostname; else command uname "$@"; fi; }}; '
+        return subprocess.run([*PREFIX, "bash", "-c", pre + argv[-1]], **kw)
+
+    monkeypatch.setattr(ctl, "RUNNER", run)
+    monkeypatch.setattr(ctl, "TICKET", b.cfg)
+    monkeypatch.setattr(ctl, "BOUND", None)
+    monkeypatch.setenv("AUTODL_SSH", "autodl-test-no-such-ssh")   # never a real ssh
+    yield b
+    _sh("bash", "-c", f'p="$(cat {d}/alive 2> /dev/null)"; case "$p" in ""|*[!0-9]*) ;; *) kill "$p" 2> /dev/null ;; esac; '
+                      f"rm -rf -- {d}")
+
+
+def _probe(capsys, *argv):
+    rc = ticket_probe.main(list(argv))
+    return rc, json.loads(capsys.readouterr().out)
+
+
+def _start_loop(box):
+    """Start the ticket's loop as its hook would, and stay until the loop holds its lock: a WSL call that ends at once
+    takes along a background process that has not reached its own session yet."""
+    wait = f"for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s {box.d}/alive ] && break; sleep 0.2; done; [ -s {box.d}/alive ]"
+    assert _sh("bash", "-c", ctl.ticket_launch(box.cfg) + "; " + wait).returncode == 0
+
+
+PUT = ["put", "demo", "--instance", PROBE_ID, "--mark", PROBE_MARK, "--in", "120"]
+REMOVE = ["remove", "demo", "--instance", PROBE_ID, "--mark", PROBE_MARK]
+
+
+@needs_ticket_bash
+def test_ticket_probe_puts_ctls_ticket_for_the_instances_own_host(probe_box, capsys):
+    rc, res = _probe(capsys, *PUT, "--grace", "180")
+    assert rc == 0 and res["ok"] and res["hosts"] == ["ffff000000"] and res["grace_s"] == 180, res
+    assert abs(res["deadline"] - (int(time.time()) + 120)) < 30, res
+    want = ctl.ticket_text(PROBE_MARK, ticket_probe.SOURCE, ["ffff000000"], res["deadline"], 180, probe_box.cfg)
+    assert probe_box.cat("ticket.sh") == want and res["sha256"] == hashlib.sha256(want.encode()).hexdigest()
+    assert ticket_probe.SOURCE != f"autodl-container-{PROBE_ID}" and probe_box.sent == ["demo"]
+    # started as at container start, its loop takes this host for one of the ticket's and stays (what it does at the
+    # deadline is tested in tests/test_ticket.py)
+    _start_loop(probe_box)
+    time.sleep(2.5)
+    assert probe_box.drive(HELD)["held"] == "1" and probe_box.cat("stopped") == ""
+
+
+@needs_ticket_bash
+def test_ticket_probe_put_leaves_another_ticket_alone(probe_box, capsys):
+    theirs = probe_box.ticket(int(time.time()) + 999, mark="ffffeeeeddddcccc")
+    rc, res = _probe(capsys, *PUT)
+    assert rc == ctl.EXIT_REFUSED and not res["ok"] and "another clone" in res["error"], res
+    assert probe_box.cat("ticket.sh") == theirs
+
+
+@needs_ticket_bash
+def test_ticket_probe_removes_its_ticket_and_sees_the_loop_leave(probe_box, capsys):
+    due = ctl.ticket_text(PROBE_MARK, ticket_probe.SOURCE, ["ffff000000"], int(time.time()) - 60, 180, probe_box.cfg)
+    probe_box.put("ticket.sh", due)
+    _start_loop(probe_box)   # due, but well within its grace
+    rc, res = _probe(capsys, *REMOVE)
+    assert rc == 0 and res["ok"] and res["removed"] is True and res["loop"] is False, res
+    assert any(r.startswith(f"{PROBE_MARK} gone ") for r in res["receipts"]), res
+    assert probe_box.cat("ticket.sh") == "" and probe_box.cat("stopped") == "" and probe_box.sent == ["demo"]
+
+
+@needs_ticket_bash
+@pytest.mark.parametrize("loop", ["still-running", "gone"])
+def test_ticket_probe_remove_is_refused_once_the_shutdown_was_issued(probe_box, capsys, loop):
+    due = ctl.ticket_text(PROBE_MARK, ticket_probe.SOURCE, ["ffff000000"], int(time.time()) - 60, 1, probe_box.cfg)
+    probe_box.put("ticket.sh", due)
+    if loop == "still-running":
+        _start_loop(probe_box)
+        time.sleep(3.5)   # past its grace of one second: it has issued the shutdown (here a stub that stops nothing)
+        assert f"{PROBE_MARK} shutdown " in probe_box.cat("receipt")
+    else:                 # the shutdown itself may have ended the loop that issued it
+        probe_box.put("receipt", f"{PROBE_MARK} shutdown 4242 {int(time.time())}\n")
+    rc, res = _probe(capsys, *REMOVE)
+    assert rc == ctl.EXIT_PENDING and not res["ok"] and "shutdown" in res["error"], res
+    assert res["removed"] is False and probe_box.cat("ticket.sh") == due
+
+
+@needs_ticket_bash
+def test_ticket_probe_remove_without_a_ticket_is_done(probe_box, capsys):
+    rc, res = _probe(capsys, *REMOVE)
+    assert rc == 0 and res["ok"] and res["removed"] is False and res["loop"] is False, res
+
+
+@needs_ticket_bash
+def test_ticket_probe_remove_leaves_another_ticket_alone(probe_box, capsys):
+    theirs = probe_box.ticket(int(time.time()) + 999, mark="ffffeeeeddddcccc")
+    rc, res = _probe(capsys, *REMOVE)
+    assert rc == ctl.EXIT_REFUSED and not res["ok"] and "another mark" in res["error"], res
+    assert probe_box.cat("ticket.sh") == theirs
+
+
+@needs_ticket_bash
+@pytest.mark.parametrize("argv", [PUT, REMOVE])
+def test_ticket_probe_does_nothing_on_another_instance(probe_box, capsys, argv):
+    mine = probe_box.ticket(int(time.time()) + 999, mark=PROBE_MARK, hosts=("ffff000000",), source="ticket-probe")
+    probe_box.host("eeee111111-1111eeee")
+    rc, res = _probe(capsys, *argv)
+    assert rc == ctl.EXIT_MISMATCH and not res["ok"] and "eeee111111-1111eeee" in res["error"], res
+    assert probe_box.cat("ticket.sh") == mine
+
+
+@pytest.mark.parametrize("argv", [
+    ["put", "demo", "--instance", "not-an-id", "--mark", PROBE_MARK, "--in", "120"],
+    ["put", "demo", "--instance", PROBE_ID, "--mark", "0123", "--in", "120"],
+    ["put", "demo", "--instance", PROBE_ID, "--mark", PROBE_MARK],                          # no --in
+    ["put", "demo", "--instance", PROBE_ID, "--mark", PROBE_MARK, "--in", "30"],            # under a minute
+    ["put", "demo", "--instance", PROBE_ID, "--mark", PROBE_MARK, "--in", "120", "--grace", "30"],
+    ["remove", "no alias", "--instance", PROBE_ID, "--mark", PROBE_MARK],
+    ["move", "demo", "--instance", PROBE_ID, "--mark", PROBE_MARK]])
+def test_ticket_probe_usage_errors(monkeypatch, capsys, argv):
+    sent = []
+    monkeypatch.setattr(ctl, "RUNNER", lambda a, **kw: sent.append(a))
+    monkeypatch.setattr(ctl, "BOUND", None)
+    with pytest.raises(SystemExit) as e:
+        ticket_probe.main(argv)
+    assert e.value.code == 2 and sent == [] and capsys.readouterr().out == ""

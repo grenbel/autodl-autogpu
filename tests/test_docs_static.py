@@ -19,7 +19,9 @@ CONSOLE_MORE_MD = ROOT / "reference" / "console-more.md"   # the four sections o
 SSH_MD = ROOT / "reference" / "ssh.md"                     # ctl: connecting, the commands, the alias
 GUARD_MD = ROOT / "reference" / "guard.md"                 # the guard on the instance
 LEDGER_MD = ROOT / "reference" / "ledger.md"               # the local record: grants, the ledger, calibration
-REFERENCES = [CONSOLE_MD, CONSOLE_MORE_MD, SSH_MD, GUARD_MD, LEDGER_MD]
+CLONE_MD = ROOT / "reference" / "clone.md"                 # waiting for a free GPU, and cloning the instance
+REFERENCES = [CONSOLE_MD, CONSOLE_MORE_MD, SSH_MD, GUARD_MD, LEDGER_MD, CLONE_MD]
+README_EN, README_CN = ROOT / "README.md", ROOT / "README.cn.md"
 
 
 def _text(path: pathlib.Path) -> str:
@@ -31,11 +33,15 @@ def _subparsers(parser) -> dict:
 
 
 def ctl_commands() -> dict:
-    """'arm' -> its parser, ..., 'auth check' -> its parser."""
-    top = dict(_subparsers(ctl.build_parser()))
-    out = {name: sp for name, sp in top.items() if name != "auth"}
-    for name, sp in _subparsers(top["auth"]).items():
-        out["auth " + name] = sp
+    """'arm' -> its parser, ..., and for a command that has subcommands each of those: 'auth check' -> its parser,
+    'ticket write' -> its parser, 'clone-record open' -> its parser."""
+    out = {}
+    for name, sp in _subparsers(ctl.build_parser()).items():
+        if any(isinstance(a, argparse._SubParsersAction) for a in sp._actions):
+            for sub, ssp in _subparsers(sp).items():
+                out[f"{name} {sub}"] = ssp
+        else:
+            out[name] = sp
     return out
 
 
@@ -75,10 +81,11 @@ def commands_in(span: str, bare: bool) -> list:
         if m and m.group(1) in tops and LONG.search(span):
             found.append((m.group(1), m.group(2) or ""))
     out = []
+    grouped = {n.split()[0] for n in names if " " in n}       # auth, ticket, clone-record: the next word is the command
     for first, rest in found:
-        if first == "auth":
+        if first in grouped:
             second = re.match(r"\s+([a-z]+)", rest)
-            out.append(("auth " + second.group(1) if second else "auth", LONG.findall(rest)))
+            out.append((first + " " + second.group(1) if second else first, LONG.findall(rest)))
         else:
             out.append((first, LONG.findall(rest)))
     return out
@@ -143,6 +150,88 @@ def test_the_other_references_name_only_ctl_commands_and_options_that_exist():
     # these files also describe the guard's own commands, whose options differ; only spans that say ctl are checked
     for path in (SSH_MD, GUARD_MD, LEDGER_MD):
         assert _problems(path, bare=False) == []
+
+
+def test_clone_manual_names_only_ctl_commands_and_options_that_exist():
+    assert _problems(CLONE_MD, bare=True) == []
+
+
+def test_clone_manual_walks_the_record_through_its_stages_in_order():
+    """reference/clone.md is the only place that tells the clone: it writes every stage into the record, in the order
+    ctl accepts them, and names every command and option that exists for cloning."""
+    text = _text(CLONE_MD)
+    at = [text.index(f"--stage {s}") for s in ctl.CLONE_STAGES[1:]]
+    assert at == sorted(at), at
+    for cmd in ("clone-record open", "clone-record update", "clone-record show", "clone-record close", "ticket write", "ticket read",
+                "ticket extend", "ticket start", "ticket clear", "auth clone", "auth daily", "auth inherit", "auth released",
+                "manifest", "spec", "job"):
+        assert f"ctl {cmd} " in text, cmd
+    for opt in ("--clone-host", "--clone-prep", "--daily", "--source", "--content", "--compare", "--changed-after", "--req",
+                "--enable", "--disable", "--wait", "--max", "--after", "--said", "--hosts", "--txn", "--deadline"):
+        assert opt in text, opt
+    for key in ("host", "gpus", "price", "expand-gb", "daily", "req", "t0", "before", "answer", "created", "instance",
+                "emergency-timer", "job", "job-req", "note", "hosts"):
+        assert f"--set {key}=" in text, key
+    assert len(CLONE_MD.read_bytes()) <= 45000
+
+
+def test_skill_knows_the_wait_for_a_gpu_and_the_clone():
+    """SKILL.md says only what must be known before acting: a fifth thing to settle, how to wait for a free GPU, that an
+    unfinished clone is finished first, and that the page's own data is read by one function only. The rest is in
+    reference/clone.md."""
+    skill = _text(SKILL)
+    assert "一共五样" in skill and "一共四样" not in skill
+    row = [ln for ln in skill.splitlines() if ln.startswith("| 没有空闲卡时 |")]
+    assert len(row) == 1 and "`clone`" in row[0] and "默认关" in row[0], row
+    assert "`ctl auth clone --instance <实例ID> --enable" in skill and '`reference/clone.md` 的"设置"' in skill
+    assert "隔不少于 10 分钟再试" not in skill and "最多 4 次" not in skill
+    wait = [ln for ln in skill.splitlines() if ln.startswith("| 要开有卡而没有卡")]
+    assert len(wait) == 1 and "每 3 分钟" in wait[0] and "`reference/clone.md`" in wait[0], wait
+    assert "页面内部的数据只经 `sshAddress` 读" in skill and "贴登录指令" in skill
+    step = [ln for ln in skill.splitlines() if ln.startswith("1. **读控制台与本机记录。**")]
+    assert len(step) == 1 and "没了结的克隆" in step[0] and "`reference/clone.md`" in step[0], step
+    facts = skill.split("\n## 平台事实\n", 1)[1].split("\n## ", 1)[0]
+    assert "SSH 主机与端口" in facts and "不读密码" in facts, facts
+    never = [ln for ln in skill.splitlines() if ln.startswith("7. **不点的。**")]
+    assert len(never) == 1 and "克隆只" in never[0] and "`reference/clone.md`" in never[0], never
+    assert "- `reference/clone.md` 是" in skill.split("\n## 细节在哪\n", 1)[1]
+
+
+def test_the_manual_tells_a_disk_s_daily_fee_from_a_power_on_s_charge():
+    """A paid expansion of the data disk is charged every day at 23:59:59, with a remark that ends in 数据盘. It is no
+    charge of a power-on: the time of a shutdown is never taken from it, and it is imported like any other row."""
+    manual = _text(CONSOLE_MD)
+    sec = manual.split("\n## 12. 读扣费\n", 1)[1].split("\n## ", 1)[0]
+    assert '"容器实例ID：<实例ID> 数据盘"' in sec and "不是开机的扣费" in sec and "取关机时刻时不算它" in sec, sec[:400]
+    rule = [ln for ln in manual.splitlines() if ln.startswith("5. 不点释放")]
+    assert len(rule) == 1 and "`reference/clone.md`" in rule[0] and "`reference/console-clone.min.js`" in rule[0], rule
+    head = manual.split("\n## 1. ", 1)[0]
+    assert "`reference/clone.md`" in head
+
+
+def test_the_references_name_this_version_of_ctl():
+    short = ctl.CTL_VERSION.rsplit(".", 1)[0]
+    assert _text(SSH_MD).startswith(f"# ctl 与 SSH（ctl v{short}）\n") and f"打印 ctl 的版本（{ctl.CTL_VERSION}）" in _text(SSH_MD)
+    assert _text(LEDGER_MD).startswith(f"# 本机记录、授权与账本、校准（ctl v{short}）\n")
+    ledger = _text(LEDGER_MD)
+    for cmd in ("auth clone", "auth daily", "auth inherit", "auth released", "clone-record"):
+        assert f"`{cmd} " in ledger, cmd
+    assert "0.8" in ledger and "同一份本机记录" in ledger       # the two versions must not share one local record
+    cmds = _text(SSH_MD).split("\n## 命令一览\n", 1)[1].split("\n## ", 1)[0]
+    for cmd in ("job 别名", "manifest 别名", "spec 别名", "ticket write|read|extend|start|clear", "--req"):
+        assert cmd in cmds, cmd
+
+
+def test_both_readmes_tell_a_person_about_the_clone():
+    """What a person has to know, in both languages: it is off until they turn it on, it rents a second instance, the
+    original is theirs to release, and a clone nobody takes over shuts itself down."""
+    cn, en = _text(README_CN), _text(README_EN)
+    for needed in ("没有空闲卡时自动克隆", "默认关闭", "新租一台", "由你自己释放", "没人接手", "`reference/clone.md`"):
+        assert needed in cn, needed
+    for needed in ("off by default", "rents a second instance", "yours to release", "nobody takes over", "`reference/clone.md`"):
+        assert needed in en, needed
+    for text in (cn, en):
+        assert "`reference/console-clone.min.js`" in text and "`reference/clone-page.js`" in text
 
 
 def _headings(path: pathlib.Path) -> set:
@@ -225,8 +314,12 @@ def test_skill_front_matter_and_length():
     # 35000 until the description named automated experiment runs and the project section named the skill: both
     # decide whether the skill is found at all, so they cannot move to a reference file either. 36000 until the
     # reference was split into five files and a first reader of them was asked twelve situations: three pointers
-    # now name the section and not only the file, and an alias the user wrote is looked at before the power-on
-    assert len(skill.encode("utf-8")) <= 36500 and skill.count("\n") <= 220
+    # now name the section and not only the file, and an alias the user wrote is looked at before the power-on.
+    # 36500 until the wait for a free GPU and the clone came (phase 11): a fifth thing to settle, the wait itself, an
+    # unfinished clone that is finished first, and the rule that the page's own data is read by one function only. All
+    # four are known before acting; everything else of the clone is in reference/clone.md. 38000 bytes are about
+    # 15.6k tokens
+    assert len(skill.encode("utf-8")) <= 38000 and skill.count("\n") <= 220
     assert "\r" not in skill and skill.endswith("\n")
 
 

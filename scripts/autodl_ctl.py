@@ -30,13 +30,16 @@ never once its marker arrived (a timeout included).
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as dt
 import errno
+import gzip
 import hashlib
 import json
 import math
 import os
 import pathlib
+import posixpath
 import re
 import secrets
 import shlex
@@ -49,8 +52,9 @@ import tarfile
 import tempfile
 import threading
 import time
+import zlib
 
-CTL_VERSION = "0.8.0"
+CTL_VERSION = "0.9.0"
 GUARD_HOME = "/root/autodl-tmp/.autodl-guard"
 GUARD_PATH = GUARD_HOME + "/autodl_guard.sh"
 LOCAL_GUARD = pathlib.Path(__file__).resolve().parent / "autodl_guard.sh"
@@ -780,13 +784,18 @@ def _fields(obj, required: set, optional: set = frozenset(), where: str = "") ->
     _need(keys <= required | optional, f"{where} has unknown fields {sorted(keys - required - optional)}")
 
 
-# the ledger's kinds of record: (required fields, optional fields); every record's key is "<kind>:<its id>"
+# the ledger's kinds of record: (required fields, optional fields); every record's key is "<kind>:<its id>".
+# Cloning added two things, which a ledger that never cloned does not hold: a reservation made for a clone names the
+# host it is for (clone_host) and may carry the new instance's daily disk fee (daily_fen); a daily record says that
+# from its time on the instance is charged fen_day a day for an expanded data disk (0 ends it)
 LEDGER_FIELDS = {
-    "reserve": ({"kind", "key", "req", "at", "expires", "mode", "gpus", "price_fen_h", "window_s"}, set()),
+    "reserve": ({"kind", "key", "req", "at", "expires", "mode", "gpus", "price_fen_h", "window_s"},
+                {"clone_host", "daily_fen"}),
     "release": ({"kind", "key", "req", "at"}, set()),
     "on": ({"kind", "key", "sid", "at", "mode", "gpus", "price_fen_h"}, {"req", "attempted_req", "unreserved"}),
     "off": ({"kind", "key", "sid", "at"}, set()),
-    "charge": ({"kind", "key", "serial", "at", "fen"}, set()),
+    "charge": ({"kind", "key", "serial", "at", "fen"}, {"disk"}),   # disk: true for a data disk's daily charge
+    "daily": ({"kind", "key", "at", "fen_day"}, set()),
 }
 
 
@@ -825,9 +834,10 @@ def validate_grant(g, where: str) -> None:
 
 
 def validate_ledger(records, where: str) -> None:
-    """Every record well formed, every key once, at most one open session, every off closing the open one."""
+    """Every record well formed, every key once, at most one open session, every off closing the open one, the daily
+    records in the order of their times."""
     _need(isinstance(records, list), f"{where} is not a list")
-    keys, open_at = set(), {}
+    keys, open_at, last_daily = set(), {}, -1
     for i, r in enumerate(records):
         w = f"{where}[{i}]"
         kind = r.get("kind") if isinstance(r, dict) else None
@@ -840,9 +850,15 @@ def validate_ledger(records, where: str) -> None:
         elif kind in ("on", "off"):
             _need(_match(SESSION_RE, r["sid"]), f"{w}: sid")
             ident = r["sid"]
+        elif kind == "daily":
+            _need(_int(r["fen_day"]), f"{w}: fen_day is not a whole number of fen, 0 or more")
+            _need(r["at"] > last_daily, f"{w}: a daily record is not later than the one before it")
+            last_daily = r["at"]
+            ident = str(r["at"])
         else:
             _need(_match(SERIAL_RE, r["serial"]), f"{w}: serial")
             _need(_int(r["fen"], 1), f"{w}: fen is not a whole positive number")
+            _need(r.get("disk", True) is True, f"{w}: disk is true or absent (true marks a data disk's daily charge)")
             ident = r["serial"]
         _need(r["key"] == f"{kind}:{ident}", f"{w}: the key does not match the record")
         _need(r["key"] not in keys, f"{w}: {r['key']} appears twice")
@@ -854,6 +870,10 @@ def validate_ledger(records, where: str) -> None:
         if kind == "reserve":   # a window as auth check makes it: at most 30 days
             _need(_int(r["window_s"], 1) and r["window_s"] <= MAX_DURATION_S and _int(r["expires"], r["at"]),
                   f"{w}: window_s or expires")
+            _need("clone_host" not in r or (_match(HOST_RE, r["clone_host"]) and r["mode"] == "gpu"),
+                  f"{w}: clone_host is a host's ID, on a GPU reservation only")
+            _need("daily_fen" not in r or ("clone_host" in r and _int(r["daily_fen"], 1)),
+                  f"{w}: daily_fen is a whole positive number of fen, and goes with clone_host only")
         elif kind == "on":
             for f in ("req", "attempted_req"):
                 _need(f not in r or _match(REQ_RE, r[f]), f"{w}: {f}")
@@ -870,8 +890,9 @@ GUARD_NOTE_RE = re.compile(r"^[ -~]{0,200}\Z")   # what a status line of the gua
 
 def validate_store(d) -> None:
     """The whole record, strictly: any part out of shape makes it unusable (never repaired). guards came later and
-    may be missing: per instance, what the guard's last status said about the next start (note_guard)."""
-    _fields(d, set(STORE_PARTS), {"guards"}, where="the record")
+    may be missing: per instance, what the guard's last status said about the next start (note_guard). clones came
+    later still and is written on first use only (validate_clones): a record that never cloned stays as 0.8 reads it."""
+    _fields(d, set(STORE_PARTS), {"guards", "clones"}, where="the record")
     _need(type(d["schema"]) is int and d["schema"] == STORE_SCHEMA, f"schema is {d['schema']!r}, not {STORE_SCHEMA}")
     _need(_int(d["last_seen"]), "last_seen is not a whole number of seconds")
     for part in ("aliases", "grants", "ledger", "calib", *(["guards"] if "guards" in d else [])):
@@ -892,6 +913,130 @@ def validate_store(d) -> None:
     for iid, entries in d["calib"].items():
         _need(bool(INSTANCE_RE.match(iid)), f"calib: {iid!r} is not an instance ID")
         validate_calib(entries, f"calib[{iid}]")
+    if "clones" in d:
+        validate_clones(d["clones"])
+
+
+# ---- clones (plan phase 11): budget groups with their clone settings, and the clone records ----
+HOST_RE = re.compile(r"^[0-9a-z]{10}\Z")   # a host's ID: the first half of the IDs of the instances on it
+TXN_RE = re.compile(r"^[0-9a-f]{16}\Z")    # a clone's transaction ID, which is also the mark on its ticket
+CLONE_AFTER = ("remind", "leave")           # what to do with the original once the clone has taken over
+CLONE_WAIT_S = (60, 86400)                  # how long to wait for a free GPU before cloning: a minute to a day
+CLONE_MAX = (1, 20)                         # clones per task
+CLONE_DEFAULTS = {"wait_s": 1800, "max": 1, "after": "remind"}
+# how far a clone has come; each is written before the action it names (design 5.2), and they follow in this order
+CLONE_STAGES = ("opened", "ticket", "reserve", "click", "clicked", "adopted", "taken-over", "launching", "launched",
+                "switched")
+
+
+def host_of(iid: str) -> str:
+    """The host an instance is on: the first half of its ID."""
+    return iid.partition("-")[0]
+
+
+def validate_clone_settings(s, where: str) -> None:
+    _fields(s, {"enabled", "wait_s", "max", "after", "quote", "at"}, {"said"}, where=where)
+    _need(type(s["enabled"]) is bool, f"{where}: enabled")
+    _need(_int(s["wait_s"], CLONE_WAIT_S[0]) and s["wait_s"] <= CLONE_WAIT_S[1], f"{where}: wait_s")
+    _need(_int(s["max"], CLONE_MAX[0]) and s["max"] <= CLONE_MAX[1], f"{where}: max")
+    _need(s["after"] in CLONE_AFTER, f"{where}: after")
+    _need(isinstance(s["quote"], str) and s["quote"].strip() != "", f"{where}: quote")
+    _need(_int(s["at"]), f"{where}: at")
+    _need("said" not in s or (isinstance(s["said"], str) and len(s["said"]) <= 2000), f"{where}: said")
+
+
+def validate_clones(c) -> None:
+    """groups: a budget group per first instance (the original), with its members in the order they came and, when the
+    user set them, the clone settings; an instance is in one group at most, and a clone names the member it came from
+    and its transaction. records: the clone records by transaction ID."""
+    _fields(c, {"groups", "records"}, where="clones")
+    _need(isinstance(c["groups"], dict) and isinstance(c["records"], dict), "clones: groups or records is not an object")
+    seen = set()
+    for gid, g in c["groups"].items():
+        w = f"clones.groups[{gid}]"
+        _need(bool(INSTANCE_RE.match(gid)), f"clones.groups: {gid!r} is not an instance ID")
+        _fields(g, {"members"}, {"settings"}, where=w)
+        ms = g["members"]
+        _need(isinstance(ms, list) and len(ms) >= 1, f"{w}: no members")
+        earlier = set()
+        for i, m in enumerate(ms):
+            wm = f"{w}.members[{i}]"
+            _fields(m, {"instance", "at"}, {"from", "txn", "released_at"}, where=wm)
+            _need(_match(INSTANCE_RE, m["instance"]) and _int(m["at"]), f"{wm}: instance or at")
+            _need(m["instance"] not in seen, f"{wm}: {m['instance']} is in a group already")
+            _need(("from" in m) == (i > 0) and ("txn" in m) == (i > 0),
+                  f"{wm}: the first member has no origin, every later one names its origin and its transaction")
+            if i == 0:
+                _need(m["instance"] == gid, f"{w}: the group is not named after its first member")
+            else:
+                _need(m["from"] in earlier, f"{wm}: its origin is not an earlier member of the group")
+                _need(_match(TXN_RE, m["txn"]), f"{wm}: txn")
+            _need("released_at" not in m or _int(m["released_at"]), f"{wm}: released_at")
+            seen.add(m["instance"])
+            earlier.add(m["instance"])
+        if "settings" in g:
+            validate_clone_settings(g["settings"], f"{w}.settings")
+    for txn, r in c["records"].items():
+        validate_clone_record(txn, r, f"clones.records[{txn}]")
+    owner = {m["instance"]: gid for gid, g in c["groups"].items() for m in g["members"]}
+    still_open = [owner.get(r["source"], r["source"]) for r in c["records"].values() if "closed_at" not in r]
+    _need(len(still_open) == len(set(still_open)), "clones.records: two clones of one group are open at once")
+
+
+DIGEST_RE = re.compile(r"^[0-9]{1,3}:[0-9a-f]{8}\Z")   # what the page script answers for an instance ID, never the ID
+TIMER_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\Z")   # a console timer as the row shows it
+CLONE_OUTCOMES = ("unused", "not-created", "not-switched", "switched")
+CLONE_CREATE_KEYS = ("host", "gpus", "price_fen_h", "expand_gb", "daily_fen", "req", "t0", "before")   # read on the create page
+CLONE_RECORD_OPTIONAL = {"source_ticket", "ticket_deadline", *CLONE_CREATE_KEYS, "answer", "created", "instance",
+                         "clone_ticket", "emergency_timer", "job", "job_req", "closed_at", "outcome", "notes"}
+MAX_HOSTS = 20
+
+
+def hosts_problem(hosts, source: str) -> str | None:
+    """Why HOSTS cannot be the hosts a clone of SOURCE may be created on, or None."""
+    if not isinstance(hosts, list) or not 1 <= len(hosts) <= MAX_HOSTS:
+        return f"between 1 and {MAX_HOSTS} hosts"
+    if not all(_match(HOST_RE, h) for h in hosts):
+        return "a host's ID is ten lower-case letters or digits (the first half of an instance ID)"
+    if len(set(hosts)) != len(hosts):
+        return "a host is named twice"
+    if host_of(source) in hosts:
+        return f"{host_of(source)} is the host of the instance itself: a free GPU there means powering it on, not cloning"
+    return None
+
+
+def validate_clone_record(txn, r, where: str) -> None:
+    """One clone, from the first look at the create page to the end (design 5.2): where it stands (stage, written
+    before the action it names), what was read for the creation, what came of it, and the notes."""
+    _fields(r, {"txn", "source", "project", "opened_at", "hosts", "stage"}, CLONE_RECORD_OPTIONAL, where=where)
+    _need(_match(TXN_RE, txn) and r["txn"] == txn, f"{where}: txn")
+    _need(_match(INSTANCE_RE, r["source"]), f"{where}: source")
+    _need(isinstance(r["project"], str) and 0 < len(r["project"]) <= 1000, f"{where}: project")
+    _need(_int(r["opened_at"]) and r["stage"] in CLONE_STAGES, f"{where}: opened_at or stage")
+    why = hosts_problem(r["hosts"], r["source"])
+    _need(why is None, f"{where}: hosts ({why})")
+    _need(r.get("source_ticket", "present") in ("present", "cleared"), f"{where}: source_ticket")
+    _need(r.get("clone_ticket", "cleared") == "cleared", f"{where}: clone_ticket")
+    for k, lo in (("ticket_deadline", 0), ("t0", 0), ("closed_at", 0), ("gpus", 1), ("price_fen_h", 1), ("expand_gb", 0),
+                  ("daily_fen", 0)):
+        _need(k not in r or _int(r[k], lo), f"{where}: {k}")
+    _need("host" not in r or r["host"] in r["hosts"], f"{where}: host is not one of the allowed hosts")
+    _need(all(k not in r or _match(REQ_RE, r[k]) for k in ("req", "job_req")), f"{where}: req or job_req")
+    _need("before" not in r or (isinstance(r["before"], list) and len(r["before"]) <= 200
+                                and all(_match(DIGEST_RE, x) for x in r["before"])), f"{where}: before")
+    _need("answer" not in r or (isinstance(r["answer"], str) and len(r["answer"]) <= 1000), f"{where}: answer")
+    _need("created" not in r or type(r["created"]) is bool, f"{where}: created")
+    _need("instance" not in r or (_match(INSTANCE_RE, r["instance"]) and r["instance"] != r["source"]
+                                  and ("host" not in r or host_of(r["instance"]) == r["host"])), f"{where}: instance")
+    _need("emergency_timer" not in r or _match(TIMER_RE, r["emergency_timer"]), f"{where}: emergency_timer")
+    _need("job" not in r or (_match(JOB_RE, r["job"]) and r["job"] != "guard"), f"{where}: job")
+    _need(("closed_at" in r) == ("outcome" in r) and r.get("outcome", CLONE_OUTCOMES[0]) in CLONE_OUTCOMES,
+          f"{where}: closed_at and outcome")
+    notes = r.get("notes", [])
+    _need(isinstance(notes, list) and len(notes) <= 200, f"{where}: notes")
+    for i, n in enumerate(notes):
+        _fields(n, {"at", "text"}, where=f"{where}.notes[{i}]")
+        _need(_int(n["at"]) and isinstance(n["text"], str) and 0 < len(n["text"]) <= 500, f"{where}.notes[{i}]")
 
 
 CALIB_RE = re.compile(r"^c[0-9a-f]{10}\Z")
@@ -1181,10 +1326,51 @@ def open_reservations(records: list) -> list:
     return [r for r in records if r["kind"] == "reserve" and r["req"] not in done]
 
 
-def _estimate_and_charged(records: list, start: int, end: int, now: int) -> tuple:
-    """(a) every session segment beginning in [start, end), an open session up to now, and 1 fen more for a power-off
-    right on the hour; (b) this period's imported charges plus the segments after the last of them."""
+DAY_S = 86400
+DAILY_AT = 57599   # 23:59:59 Beijing time, as unix seconds within a day: when AutoDL charges an expanded data disk
+
+
+def daily_instants(a: int, b: int) -> int:
+    """How many of the daily charge times fall in [a, b)."""
+    if b <= a:
+        return 0
+    first = a + (DAILY_AT - a) % DAY_S   # the first one at or after a
+    return 0 if first >= b else (b - 1 - first) // DAY_S + 1
+
+
+def daily_now(records: list, t: int) -> int:
+    """The daily fee (fen a day) in force at T: that of the last daily record at or before it, 0 without one."""
+    return next((r["fen_day"] for r in reversed(records) if r["kind"] == "daily" and r["at"] <= t), 0)
+
+
+def daily_fen(records: list, lo: int, hi: int) -> int:
+    """The daily fees that fell due in [lo, hi): at every charge time, the fee in force then."""
+    ds = [r for r in records if r["kind"] == "daily"]   # in the order of their times (validate_ledger)
+    tot = 0
+    for i, r in enumerate(ds):
+        until = ds[i + 1]["at"] if i + 1 < len(ds) else hi
+        tot += r["fen_day"] * daily_instants(max(lo, r["at"]), min(hi, until))
+    return tot
+
+
+def held_daily_fen(records: list, start: int, end: int, now: int) -> int:
+    """What the open clone reservations with a daily fee have run up in [start, end) so far: the new instance's
+    expanded disk is charged from its creation on, whether or not anybody has adopted the instance yet. It is counted
+    with the reservation and apart from this ledger's charges, which are another instance's."""
+    return sum(r["daily_fen"] * daily_instants(max(start, r["at"]), min(end, now + 1))
+               for r in open_reservations(records) if "daily_fen" in r)
+
+
+def _estimate_and_charged(records: list, start: int, end: int, now: int) -> int:
+    """The spending of [start, end) by the ledger's own figures, never below what was imported, in two parts that are
+    reconciled each on its own. Power-ons: the larger of (a) every session segment beginning in the period, an open
+    session up to now, and 1 fen more for a power-off right on the hour, and (b) the period's imported charges of
+    power-ons plus the segments after the last of them. The data disk: the larger of the daily fees that fell due in
+    the period up to now, and the period's imported disk charges plus the daily fees after the last of them. Kept
+    apart, an import that left out the disk's rows cannot hide the daily fees behind the power-ons' charges, and
+    one that has them does not count them twice."""
     sess = session_list(records)
+    upto = min(end, now + 1)
 
     def estimate(after: int, off_at_after: bool) -> int:
         tot = 0
@@ -1198,18 +1384,24 @@ def _estimate_and_charged(records: list, start: int, end: int, now: int) -> tupl
                 # the last charge only when later than it: a charge at that very time is that one)
         return tot
     pc = [r for r in records if r["kind"] == "charge" and start <= r["at"] < end]   # this period's charges only
+    on_c, disk_c = [c for c in pc if not c.get("disk")], [c for c in pc if c.get("disk")]
     a = estimate(start, True)
-    b = a if not pc else sum(c["fen"] for c in pc) + estimate(max(c["at"] for c in pc), False)
-    return a, b
+    if on_c:
+        last = max(c["at"] for c in on_c)
+        a = max(a, sum(c["fen"] for c in on_c) + estimate(last, False))
+    d = daily_fen(records, start, upto)
+    if disk_c:
+        last = max(c["at"] for c in disk_c)
+        d = max(d, sum(c["fen"] for c in disk_c) + daily_fen(records, max(start, last + 1), upto))
+    return a + d
 
 
 def spent_fen(records: list, start: int, end: int, now: int) -> int:
-    """Fen spent in [start, end), never below the ledger's own estimate: the larger of (a) and (b) above, plus every
-    open reservation whose window touches the period, in full."""
-    a, b = _estimate_and_charged(records, start, end, now)
+    """Fen spent in [start, end), never below the ledger's own estimate (_estimate_and_charged), plus every open
+    reservation whose window touches the period, in full, and the daily fee a clone reservation carries."""
     held = sum(window_fen(r["at"], r["window_s"], r["price_fen_h"])
                for r in open_reservations(records) if r["at"] < end and r["expires"] > start)
-    return max(a, b) + held
+    return _estimate_and_charged(records, start, end, now) + held + held_daily_fen(records, start, end, now)
 
 
 def spent_gpu_s(records: list, start: int, end: int, now: int) -> int:
@@ -1585,6 +1777,513 @@ def ledger_off(recs: list, at: int, req: str | None) -> tuple:
     return op["sid"], "recorded", None
 
 
+# ---- clone settings and budget groups (plan phase 11; design section 3) ----
+def clones_part(data: dict, create: bool = False) -> dict | None:
+    """The record's clones part. It is made on first use only, so a record that never cloned stays as 0.8 reads it."""
+    if "clones" not in data:
+        if not create:
+            return None
+        data["clones"] = {"groups": {}, "records": {}}
+    return data["clones"]
+
+
+def group_of(data: dict, iid: str) -> tuple:
+    """(group ID, group) of the budget group IID is a member of, or (None, None): it is then a group of its own."""
+    for gid, g in (data.get("clones") or {"groups": {}})["groups"].items():
+        if any(m["instance"] == iid for m in g["members"]):
+            return gid, g
+    return None, None
+
+
+def own_group(data: dict, iid: str, now: int) -> tuple:
+    """The group of IID, made with IID as its first member when it has none yet."""
+    gid, g = group_of(data, iid)
+    if g is None:
+        gid, g = iid, {"members": [{"instance": iid, "at": now}]}
+        clones_part(data, create=True)["groups"][gid] = g
+    return gid, g
+
+
+def group_ids(data: dict, iid: str) -> list:
+    """The instances that share IID's budget: the members of its group, IID first; IID alone without a group."""
+    _, g = group_of(data, iid)
+    return [iid] + ([m["instance"] for m in g["members"] if m["instance"] != iid] if g else [])
+
+
+def clone_made(data: dict, g: dict) -> int:
+    """Clones made in this task: the group's clone records opened since the settings were given that reached the
+    click on the create button and were not found to have created nothing. One whose outcome is unknown counts."""
+    s = g.get("settings")
+    if not s:
+        return 0
+    ids = {m["instance"] for m in g["members"]}
+    at_click = CLONE_STAGES.index("click")
+    return sum(1 for r in data["clones"]["records"].values()
+               if r["source"] in ids and r["opened_at"] >= s["at"] and CLONE_STAGES.index(r["stage"]) >= at_click
+               and r.get("created") is not False)
+
+
+def open_clone_record(data: dict, g: dict | None) -> dict | None:
+    """The group's clone record that is not closed yet (there is one at most), or None."""
+    if not g:
+        return None
+    ids = {m["instance"] for m in g["members"]}
+    return next((r for r in data["clones"]["records"].values() if "closed_at" not in r and r["source"] in ids), None)
+
+
+def clone_view(data: dict, iid: str, now: int) -> dict | None:
+    """The clone item of auth show: the settings, how many clones this task made, the group's members (each with its
+    daily disk fee, when it has one) and the open clone record. None for an instance without settings that is in no
+    group."""
+    gid, g = group_of(data, iid)
+    if g is None:
+        return None
+    s = g.get("settings") or {}
+    rec = open_clone_record(data, g)
+    members = copy.deepcopy(g["members"])
+    for m in members:
+        fee = daily_now(data["ledger"].get(m["instance"], []), now)
+        if fee:
+            m["daily_fen"] = fee
+    view = {"group": gid, "enabled": s.get("enabled", False), "wait_s": s.get("wait_s"), "max": s.get("max"),
+            "made": clone_made(data, g), "after": s.get("after"), "quote": s.get("quote"), "at": s.get("at"),
+            "members": members,
+            "open_record": None if rec is None else {k: rec.get(k) for k in ("txn", "stage", "project", "source", "instance")}}
+    if "said" in s:
+        view["said"] = s["said"]
+    moved = [r for r in data["clones"]["records"].values() if r["source"] == iid and r["stage"] == "switched"]
+    if moved:   # for a conversation of another project that still names this instance (design 5.8)
+        view["note"] = (f"the task of this instance moved to its clone {moved[-1]['instance']}: ask the user before "
+                        "powering this one on, the two disks have gone separate ways since")
+    return view
+
+
+def cmd_auth_clone(a) -> int:
+    """Whether to clone when the host has no free GPU, and how (design section 3). The settings belong to the budget
+    group, outside the grant: a new grant or a revoke leaves them alone. Every --enable starts the task anew, which is
+    what the clone count is counted for."""
+    iid = need_instance(a.instance)
+    if a.enable == a.disable:
+        raise ValueError("auth clone needs --enable or --disable (one of them)")
+    if not a.quote.strip():
+        raise ValueError("--quote: the user's own words are needed")
+    wait_s = None if a.wait is None else parse_duration_s(a.wait)
+    if wait_s is not None and not CLONE_WAIT_S[0] <= wait_s <= CLONE_WAIT_S[1]:
+        raise ValueError(f"--wait {a.wait!r}: between one minute and 24 hours")
+    if a.max is not None and not CLONE_MAX[0] <= a.max <= CLONE_MAX[1]:
+        raise ValueError(f"--max {a.max}: between {CLONE_MAX[0]} and {CLONE_MAX[1]}")
+    if a.said is not None and len(a.said) > 2000:
+        raise ValueError("--said: at most 2000 characters")
+    with Store() as st:
+        now = now_s()
+        gid, g = own_group(st.data, iid, now)
+        # an --enable states the task's settings afresh (what was not said takes its default); a --disable only turns
+        # the switch off and keeps what was chosen before
+        base = dict(CLONE_DEFAULTS) if a.enable or "settings" not in g else {k: g["settings"][k] for k in CLONE_DEFAULTS}
+        s = {"enabled": bool(a.enable), "wait_s": base["wait_s"] if wait_s is None else wait_s,
+             "max": base["max"] if a.max is None else a.max, "after": base["after"] if a.after is None else a.after,
+             "quote": a.quote, "at": now}
+        if a.said is not None:
+            s["said"] = a.said
+        g["settings"] = s
+        st.save()
+        view = clone_view(st.data, iid, now)
+    out({"instance": iid, "clone": view})
+    return 0
+
+
+# ---- clone records (plan phase 11; design 5.2 and the end of 5.6) ----
+def clone_copy_path(project: str) -> pathlib.Path:
+    return pathlib.Path(project) / ".autodl" / "clone_pending.json"
+
+
+def _clone_json(rec: dict) -> str:
+    return json.dumps(rec, ensure_ascii=False, indent=1) + "\n"
+
+
+def write_clone_copy(rec: dict) -> str:
+    """The copy of an open clone record in its project, for people to read; the local record is what counts. It never
+    fails the command: it answers what happened."""
+    p = clone_copy_path(rec["project"])
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(_clone_json(rec), encoding="utf-8", newline="\n")
+        os.replace(tmp, p)
+        return "written"
+    except OSError as e:
+        return f"not written: {e}"
+
+
+def _read_clone_copy(p: pathlib.Path):
+    """What the copy holds: None when it is not there, "unreadable" when it is not a JSON object."""
+    try:
+        got = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+    except (OSError, ValueError):
+        return "unreadable"
+    return got if got is None or isinstance(got, dict) else "unreadable"
+
+
+def archive_clone_copy(rec: dict) -> str:
+    """The copy of a closed record, kept under the transaction's name; the pending copy goes when it is this clone's."""
+    p = clone_copy_path(rec["project"])
+    kept = p.with_name(f"clone_{rec['txn']}.json")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_text(_clone_json(rec), encoding="utf-8", newline="\n")
+        have = _read_clone_copy(p)
+        if have == "unreadable" or (isinstance(have, dict) and have.get("txn") == rec["txn"]):
+            os.remove(p)
+        return f"kept as {kept.name}"
+    except OSError as e:
+        return f"not written: {e}"
+
+
+def sync_clone_copy(data: dict, project: str) -> str:
+    """Make the project's copy say what the local record says about the project's open clone; what was done."""
+    proj = pathlib.Path(normalize_local(project)).resolve().as_posix()
+    recs = (data.get("clones") or {"records": {}})["records"]
+    rec = next((r for r in recs.values() if "closed_at" not in r and r["project"] == proj), None)
+    have = _read_clone_copy(clone_copy_path(proj))
+    if rec is None:
+        if have is None:
+            return "none"
+        old = recs.get(have.get("txn")) if isinstance(have, dict) else None
+        if old is not None and "closed_at" in old and old["project"] == proj:
+            return archive_clone_copy(old)
+        return "a copy is there that no clone of this project in the local record matches: left alone"
+    if have == rec:
+        return "as the record"
+    done = write_clone_copy(rec)
+    return "rewritten" if done == "written" else done
+
+
+def find_open_record(data: dict, txn: str) -> dict:
+    """The clone record every changing command must name. An ID that fits no open record changes nothing."""
+    if not TXN_RE.match(txn or ""):
+        raise ValueError(f"--txn {txn!r}: the transaction ID that clone-record open gave (16 hex digits)")
+    rec = (data.get("clones") or {"records": {}})["records"].get(txn)
+    if rec is None:
+        raise Refused(f"no clone record has the transaction ID {txn}: nothing was changed")
+    if "closed_at" in rec:
+        raise Refused(f"the clone {txn} is closed ({rec['outcome']}): nothing was changed")
+    return rec
+
+
+def open_clone_reservations(recs: list) -> list:
+    return [r for r in open_reservations(recs) if "clone_host" in r]
+
+
+def stage_problem(data: dict, rec: dict, stage: str) -> str | None:
+    """Why REC cannot enter STAGE yet, or None. A stage is written before the action it names, and every stage before
+    it is done by then: so what the earlier ones leave behind must be there."""
+    if stage == "reserve":
+        if rec.get("source_ticket") != "present" or "ticket_deadline" not in rec:
+            return ("the ticket is not on the source instance (ctl ticket write ALIAS --txn ...): without it a clone that "
+                    "nobody takes over would run on")
+    elif stage == "click":
+        lack = [k for k in ("host", "gpus", "price_fen_h", "expand_gb", "req", "t0", "before") if k not in rec]
+        if lack:
+            return "the record lacks what was read for the creation: " + ", ".join(lack)
+        if rec["expand_gb"] > 0 and not rec.get("daily_fen"):
+            return f"the data disk is to be expanded by {rec['expand_gb']} GB: the record lacks its daily fee (--set daily=...)"
+        r = next((x for x in open_clone_reservations(data["ledger"].get(rec["source"], [])) if x["req"] == rec["req"]), None)
+        if r is None or (r["clone_host"], r["gpus"], r["price_fen_h"], r.get("daily_fen", 0)) != (
+                rec["host"], rec["gpus"], rec["price_fen_h"], rec.get("daily_fen", 0)):
+            return (f"the source's ledger has no open reservation {rec['req']} for this host, GPU count, price and daily "
+                    "fee (ctl auth check --clone-host ...): no click without the budget check")
+    elif stage == "clicked":
+        if "answer" not in rec:
+            return "the record lacks the platform's answer to the click (--set answer=..., empty when it said nothing)"
+    elif stage == "adopted":
+        if "instance" not in rec:
+            return "the record lacks the new instance (--set instance=ID)"
+        _, g = group_of(data, rec["source"])
+        if not g or not any(m["instance"] == rec["instance"] and m.get("from") == rec["source"] and m.get("txn") == rec["txn"]
+                            for m in g["members"]):
+            return (f"{rec['instance']} is not in the source's budget group yet: ctl auth inherit --from {rec['source']} "
+                    f"--to {rec['instance']} --req {rec.get('req')} comes first")
+    elif stage == "taken-over":
+        if rec.get("clone_ticket") != "cleared":
+            return "the ticket on the new instance is not cleared (ctl ticket clear ALIAS --txn ...)"
+        if "emergency_timer" in rec:
+            return ("the emergency console timer is still in the record: cancel or replace it on the console, then --set "
+                    "emergency-timer=none")
+    elif stage == "launching":
+        if "job" not in rec or "job_req" not in rec:
+            return "the record lacks the job and its request ID (--set job=NAME --set job-req=ID), written before the launch"
+    return None
+
+
+def apply_clone_set(data: dict, rec: dict, key: str, value: str, now: int) -> None:
+    """One --set KEY=VALUE on REC (a working copy). ValueError for a value that does not fit, Refused for one that is
+    not to be changed now."""
+    at = CLONE_STAGES.index(rec["stage"])
+    stage_of = CLONE_STAGES.index
+
+    def need_stage(ok: bool, when: str) -> None:
+        if not ok:
+            raise Refused(f"{key} is set {when}; this clone is at {rec['stage']}")
+    if key in ("host", "gpus", "price", "expand-gb", "daily", "req", "t0", "before"):
+        need_stage(at == stage_of("reserve"), "while the record is at reserve (with the reading of the create page)")
+        if key == "host":
+            if value not in rec["hosts"]:
+                raise ValueError(f"host={value}: not one of the hosts this clone may be created on ({', '.join(rec['hosts'])})")
+            rec["host"] = value
+        elif key in ("gpus", "expand-gb", "t0"):
+            if not re.match(r"^[0-9]{1,12}\Z", value):
+                raise ValueError(f"{key}={value}: a whole number")
+            n = int(value)
+            if key == "gpus" and n < 1:
+                raise ValueError("gpus: at least 1")
+            if key == "t0" and not 0 < n <= now + 300:
+                raise ValueError(f"t0={n}: the ctl now taken before the click, at most five minutes ahead of now ({now})")
+            rec[{"gpus": "gpus", "expand-gb": "expand_gb", "t0": "t0"}[key]] = n
+        elif key in ("price", "daily"):
+            fen = yuan_to_fen(value, key)
+            if key == "price" and fen < 1:
+                raise ValueError("price: more than 0")
+            rec["price_fen_h" if key == "price" else "daily_fen"] = fen
+        elif key == "req":
+            if not REQ_RE.match(value):
+                raise ValueError(f"req={value}: the request ID auth check gave")
+            rec["req"] = value
+        else:
+            digests = value.split(",") if value else []
+            if len(digests) > 200 or not all(DIGEST_RE.match(x) for x in digests):
+                raise ValueError("before: the digests idDigests() of the page script answered, separated by commas")
+            rec["before"] = digests
+    elif key == "hosts":
+        need_stage(at <= stage_of("ticket"), "before the ticket is final (at opened or ticket)")
+        hosts = value.split(",")
+        why = hosts_problem(hosts, rec["source"])
+        if why:
+            raise ValueError(f"hosts={value}: {why}")
+        rec["hosts"] = hosts
+    elif key == "answer":
+        need_stage(at >= stage_of("click"), "once the click may have been made")
+        if len(value) > 1000:
+            raise ValueError("answer: at most 1000 characters")
+        rec["answer"] = value
+    elif key == "created":
+        need_stage(stage_of("click") <= at < stage_of("adopted"), "between the click and the adoption")
+        if value not in ("yes", "no"):
+            raise ValueError("created: yes or no")
+        rec["created"] = value == "yes"
+    elif key == "instance":
+        need_stage(stage_of("click") <= at < stage_of("adopted"), "between the click and the adoption")
+        if not INSTANCE_RE.match(value) or value == rec["source"] or host_of(value) != rec.get("host"):
+            raise ValueError(f"instance={value}: an instance ID on the chosen host ({rec.get('host')}), not the source's")
+        if rec.get("instance", value) != value:
+            raise Refused(f"the record names {rec['instance']} as the new instance already: it cannot become another")
+        gid, g = group_of(data, value)
+        if g is not None and not any(m["instance"] == value and m.get("txn") == rec["txn"] for m in g["members"]):
+            raise Refused(f"{value} is in the budget group of {gid} already, not as this clone")
+        rec["instance"] = value
+    elif key == "emergency-timer":
+        need_stage(at >= stage_of("click"), "once the click may have been made")
+        if value == "none":
+            rec.pop("emergency_timer", None)
+        elif TIMER_RE.match(value):
+            rec["emergency_timer"] = value
+        else:
+            raise ValueError("emergency-timer: the time the row shows (YYYY-MM-DD HH:MM:SS), or none")
+    elif key in ("job", "job-req"):
+        need_stage(at >= stage_of("taken-over"), "once the new instance is taken over")
+        if key == "job":
+            if not JOB_RE.match(value) or value == "guard":
+                raise ValueError(f"job={value}: a job name as ctl run takes it")
+            rec["job"] = value
+        else:
+            if not REQ_RE.match(value):
+                raise ValueError(f"job-req={value}: 16 hex digits")
+            rec["job_req"] = value
+    elif key == "note":
+        if not 0 < len(value) <= 500:
+            raise ValueError("note: 1 to 500 characters")
+        notes = rec.setdefault("notes", [])
+        if len(notes) >= 200:
+            raise ValueError("note: this record holds 200 notes already")
+        notes.append({"at": now, "text": value})
+    else:
+        raise ValueError(f"--set {key}=...: not a field that can be set (host, gpus, price, expand-gb, daily, req, t0, "
+                         "before, hosts, answer, created, instance, emergency-timer, job, job-req, note)")
+
+
+def refusing(fn):
+    """A command of the clone record: a refusal is answered as JSON with the reason, exit 1, and nothing is written."""
+    def run(a) -> int:
+        try:
+            return fn(a)
+        except Refused as e:
+            out({"ok": False, "reason": str(e)})
+            return EXIT_ERR
+    run.__name__, run.__doc__ = fn.__name__, fn.__doc__
+    return run
+
+
+@refusing
+def cmd_clone_open(a) -> int:
+    """Open the record of a clone before anything is touched (design 5.2): one write under the record's lock. Refused
+    while cloning is not enabled, the task's clones are used up, or a clone of the group is not closed yet."""
+    iid = need_instance(a.instance)
+    hosts = (a.hosts or "").split(",")
+    why = hosts_problem(hosts, iid)
+    if why:
+        raise ValueError(f"--hosts {a.hosts!r}: {why}")
+    project = pathlib.Path(normalize_local(a.project)).resolve().as_posix()
+    if len(project) > 1000:
+        raise ValueError("--project: the path is too long")
+    with Store() as st:
+        now = now_s()
+        _, g = group_of(st.data, iid)
+        s = g.get("settings") if g else None
+        if not s or not s["enabled"]:
+            raise Refused(f"cloning is not enabled for {iid}: ask the user, then ctl auth clone --instance {iid} --enable "
+                          "--quote '<their words>'")
+        if any(m["instance"] == iid and "released_at" in m for m in g["members"]):
+            raise Refused(f"{iid} is recorded as released")
+        op = open_clone_record(st.data, g)
+        if op is not None:
+            raise Refused(f"the clone {op['txn']} of this instance's group is not closed yet (at {op['stage']}, project "
+                          f"{op['project']}): finish that one first, as its stage says; no second one is started")
+        made = clone_made(st.data, g)
+        if made >= s["max"]:
+            raise Refused(f"this task has made {made} of its {s['max']} clone(s): no further clone without the user's word "
+                          "(a new ctl auth clone --enable starts a new task)")
+        _hook("clone-open-decided")
+        txn = secrets.token_hex(8)
+        rec = {"txn": txn, "source": iid, "project": project, "opened_at": now, "hosts": hosts, "stage": "opened"}
+        st.data["clones"]["records"][txn] = rec
+        st.save()
+    out({"ok": True, "txn": txn, "stage": "opened", "source": iid, "hosts": hosts, "copy": write_clone_copy(rec)})
+    return 0
+
+
+@refusing
+def cmd_clone_update(a) -> int:
+    """Set fields of an open clone record and move it one stage on (or, from reserve, back to ticket). The stage is
+    written before the action it names. Everything in one command is taken, or nothing."""
+    sets = []
+    for kv in a.set or []:
+        k, sep, v = kv.partition("=")
+        if not sep or not k:
+            raise ValueError(f"--set {kv!r} must look like key=value")
+        sets.append((k, v))
+    if a.stage is not None and a.stage not in CLONE_STAGES:
+        raise ValueError(f"--stage {a.stage!r}: one of {', '.join(CLONE_STAGES)}")
+    with Store() as st:
+        now = now_s()
+        old = find_open_record(st.data, a.txn)
+        rec = copy.deepcopy(old)
+        for k, v in sets:
+            apply_clone_set(st.data, rec, k, v, now)
+        if rec.get("created") is False:
+            if "instance" in rec:
+                raise Refused(f"the record names {rec['instance']} as the new instance: it cannot say that nothing was "
+                              "created")
+            if old.get("created") is not False and not any(k == "note" for k, _ in sets):
+                raise Refused("created=no needs a note in the same command that says how it was found out (--set note=...)")
+        if a.stage is not None and a.stage != rec["stage"]:
+            i, j = CLONE_STAGES.index(rec["stage"]), CLONE_STAGES.index(a.stage)
+            if (rec["stage"], a.stage) == ("reserve", "ticket"):   # the one way back: to prepare again
+                held = open_clone_reservations(st.data["ledger"].get(rec["source"], []))
+                if held:
+                    raise Refused(f"the clone's reservation {held[0]['req']} is open: release it first (ctl auth release "
+                                  f"--instance {rec['source']} --req {held[0]['req']}), then go back to ticket")
+                for k in CLONE_CREATE_KEYS:   # what was read on the create page is read again after preparing again
+                    rec.pop(k, None)
+            elif j != i + 1:
+                raise Refused(f"this clone is at {rec['stage']}: the next stage is "
+                              f"{CLONE_STAGES[i + 1] if i + 1 < len(CLONE_STAGES) else 'none (close it)'}, not {a.stage}")
+            else:
+                why = stage_problem(st.data, rec, a.stage)
+                if why:
+                    raise Refused(f"not at {a.stage} yet: {why}")
+                if a.stage == "adopted":
+                    rec["created"] = True
+            rec["stage"] = a.stage
+        if rec != old:
+            st.data["clones"]["records"][a.txn] = rec
+            st.save()
+    out({"ok": True, "txn": a.txn, "stage": rec["stage"], "record": rec, "copy": write_clone_copy(rec)})
+    return 0
+
+
+@refusing
+def cmd_clone_close(a) -> int:
+    """Close a clone: nothing of it is left to clean up (the ticket is off the source, no reservation of it is open in
+    any ledger of the budget group), and what came of the click is known. The outcome follows from where the record
+    stands. From the stage ticket on the ticket may be on the source whatever the record says about it (a write that
+    reached the instance and was not noted): only a clear that was noted lets the clone be closed."""
+    if a.note is not None and not 0 < len(a.note) <= 500:
+        raise ValueError("--note: 1 to 500 characters")
+    with Store() as st:
+        now = now_s()
+        rec = find_open_record(st.data, a.txn)
+        at = CLONE_STAGES.index(rec["stage"])
+        if at >= CLONE_STAGES.index("ticket") and rec.get("source_ticket") != "cleared":
+            raise Refused("the ticket may still be on the source instance (the record went past opened and no clear of the "
+                          f"ticket is noted): clear it first (ctl ticket clear ALIAS --source --txn {a.txn}), which also "
+                          "settles it when no ticket is there; if the source cannot be started now, note that and tell "
+                          "the user")
+        for iid in group_ids(st.data, rec["source"]):   # after inherit the reservation is in the new instance's ledger
+            held = open_clone_reservations(st.data["ledger"].get(iid, []))
+            if held and iid == rec["source"]:
+                raise Refused(f"the clone's reservation {held[0]['req']} is still open: release it (nothing was created) "
+                              "or adopt the new instance (ctl auth inherit)")
+            if held:
+                raise Refused(f"the clone's reservation {held[0]['req']} is still open in the ledger of {iid}: record the "
+                              f"power-on it was made for (ctl log on --instance {iid} --req {held[0]['req']} --at <T0> "
+                              "--field ...); only when that instance was never on, release it (ctl auth release "
+                              f"--instance {iid} --req {held[0]['req']})")
+        if at <= CLONE_STAGES.index("reserve"):
+            outcome = "unused"
+        elif at < CLONE_STAGES.index("adopted"):
+            if rec.get("created") is not False:
+                raise Refused("whether the click created an instance is not settled: find out first (the list, the billing "
+                              "detail), then --set created=no with a note, or adopt the instance")
+            outcome = "not-created"
+        elif rec["stage"] == "switched":
+            outcome = "switched"
+        else:
+            if a.note is None:
+                raise Refused("the new instance was adopted and the task did not move to it: close with --note saying what "
+                              "becomes of the two instances")
+            outcome = "not-switched"
+        if a.note is not None:
+            rec.setdefault("notes", []).append({"at": now, "text": a.note})
+        rec.update(closed_at=now, outcome=outcome)
+        st.save()
+    res = {"ok": True, "txn": a.txn, "outcome": outcome, "copy": archive_clone_copy(rec),
+           "next": "take the clone_pending line out of the project's ## AutoDL section"}
+    if outcome == "not-switched" and rec.get("clone_ticket") != "cleared":
+        res["note"] = (f"the ticket is still on {rec.get('instance')}: it shuts that instance down 15 minutes after every "
+                       "start until it is cleared (ctl ticket clear ALIAS --txn ...). Tell the user")
+    out(res)
+    return 0
+
+
+@refusing
+def cmd_clone_show(a) -> int:
+    """The clone records: the open ones, or with --all the closed ones too; --txn or --instance narrow it. With
+    --project the project's copy is brought in line with the local record."""
+    with Store() as st:
+        recs = list((st.data.get("clones") or {"records": {}})["records"].values())
+        if a.txn is not None:
+            recs = [r for r in recs if r["txn"] == a.txn]
+        elif not a.all:
+            recs = [r for r in recs if "closed_at" not in r]
+        if a.instance is not None:
+            ids = set(group_ids(st.data, need_instance(a.instance)))
+            recs = [r for r in recs if r["source"] in ids or r.get("instance") in ids]
+        res = {"records": copy.deepcopy(recs)}
+        if a.project is not None:
+            res["copy"] = sync_clone_copy(st.data, a.project)
+    out(res)
+    return 0
+
+
 def cmd_auth_grant(a) -> int:
     iid = need_instance(a.instance)
     check_alias(a.alias)
@@ -1667,18 +2366,23 @@ def cmd_auth_show(a) -> int:
             recs = st.data["ledger"].get(iid, [])
             key, s, e = period_of(now, g or DEFAULT_PERIOD)
             op = _open_session(recs)
+            books = group_books(st.data, iid)   # the budget is the group's: what is left counts every member's ledger
             item = {"grant": g, "period": key, "spent_fen": spent_fen(recs, s, e, now),
                     "spent_gpu_s": spent_gpu_s(recs, s, e, now),
+                    "group_spent_fen": sum(spent_fen(b, s, e, now) for b in books),
+                    "group_spent_gpu_s": sum(spent_gpu_s(b, s, e, now) for b in books),
                     "open_reservations": [r["req"] for r in open_reservations(recs)],
                     "open_session": session_view(op),
-                    "guard_at_boot": guarded_modes(st.data.get("guards", {}).get(iid))}
+                    "guard_at_boot": guarded_modes(st.data.get("guards", {}).get(iid)),
+                    "daily_fen": daily_now(recs, now),
+                    "clone": clone_view(st.data, iid, now)}
             if booted is not None:   # when taking over a running instance: is its power-on in the ledger?
                 item["this_boot"] = ("recorded" if of_this_boot(op, booted) else
                                      "not recorded" if op is None else "an earlier session is still open")
             if g and g["budget"]["kind"] == "fen":
-                item["remaining_fen"] = g["budget"]["value"] - item["spent_fen"]
+                item["remaining_fen"] = g["budget"]["value"] - item["group_spent_fen"]
             elif g and g["budget"]["kind"] == "gpu_mh":
-                item["remaining_gpu_hours"] = round((g["budget"]["value"] * 18 - item["spent_gpu_s"] * 5) / 18000, 4)
+                item["remaining_gpu_hours"] = round((g["budget"]["value"] * 18 - item["group_spent_gpu_s"] * 5) / 18000, 4)
             if baseline_owed(g, now):   # the figures above lack what was spent in the period before any import
                 item["baseline"] = f"{key}: " + BASELINE.format(iid=iid)
             res[iid] = item
@@ -1757,21 +2461,25 @@ def cmd_auth_clock(a) -> int:
     return 0
 
 
-def _judge(g: dict, recs: list, now: int, expires: int, mode: str, gpus: int, price: int, window_s: int) -> tuple:
+def _judge(g: dict, books: list, now: int, expires: int, mode: str, gpus: int, price: int, window_s: int,
+           daily: int = 0) -> tuple:
     """Every period the window touches: (periods, failure or None). A failure is the first period over the budget,
-    or left under 20 % of it without the user's consent for that period."""
+    or left under 20 % of it without the user's consent for that period. BOOKS are the ledgers that share the budget
+    (the instance's own, and those of its budget group); DAILY is the daily disk fee (fen) a clone would bring, counted
+    for every charge time inside the window."""
     b, periods = g["budget"], []
-    need_f, need_s = window_fen(now, window_s, price), window_s * gpus if mode == "gpu" else 0
+    need_f = window_fen(now, window_s, price) + daily * daily_instants(now, now + window_s)
+    need_s = window_s * gpus if mode == "gpu" else 0
     for key, s, e in periods_touching(now, expires, g):
         p = {"period": key}
         over = near = False
         if b["kind"] == "fen":
-            spent = spent_fen(recs, s, e, now)
+            spent = sum(spent_fen(recs, s, e, now) for recs in books)
             rem = b["value"] - spent - need_f
             p.update(budget_fen=b["value"], spent_fen=spent, need_fen=need_f, remaining_fen=rem)
             over, near = rem < 0, 5 * rem < b["value"]
         elif b["kind"] == "gpu_mh":   # compared in whole numbers: spent_s * 5 <= budget_mh * 18
-            spent = spent_gpu_s(recs, s, e, now)
+            spent = sum(spent_gpu_s(recs, s, e, now) for recs in books)
             units = b["value"] * 18 - (spent + need_s) * 5
             p.update(budget_gpu_mh=b["value"], spent_gpu_s=spent, need_gpu_s=need_s,
                      remaining_gpu_hours=round(units / 18000, 4))
@@ -1805,11 +2513,29 @@ def cmd_auth_check(a) -> int:
     if (a.mode == "gpu" and a.gpus < 1) or (a.mode == "nogpu" and a.gpus != 0):
         raise ValueError("--gpus: at least 1 in GPU mode, 0 without GPUs")
     window_s = parse_hours_s(a.hours)
+    # the three options of a clone (design 5.5 step 4, 5.2 and 5.8): the reservation for the new instance, the daily
+    # fee of its expanded disk, and the two short starts of the source without GPUs
+    if a.clone_host is not None and (not HOST_RE.match(a.clone_host) or a.mode != "gpu" or a.probe):
+        raise ValueError(f"--clone-host {a.clone_host!r}: a host's ID, with --mode gpu and without --probe")
+    daily = 0
+    if a.daily is not None:
+        daily = yuan_to_fen(a.daily, "--daily")
+        if a.clone_host is None or daily < 1:
+            raise ValueError("--daily: the daily fee of the new instance's expanded disk, more than 0, with --clone-host only")
+    if a.clone_prep and (a.mode != "nogpu" or a.probe or a.clone_host is not None):
+        raise ValueError("--clone-prep is for a start without GPUs (--mode nogpu) that prepares or closes a clone")
     try:
         with Store() as st:
             now = now_s()
             g = st.data["grants"].get(iid)
-            if g is None or g["usage"] not in ("both", a.mode):
+            _, grp = group_of(st.data, iid)
+            clone = open_clone_record(st.data, grp)
+            allowed = g is not None and g["usage"] in ("both", a.mode)
+            if g is not None and not allowed and a.clone_prep:
+                # a grant for GPU use only: with cloning enabled and a clone under way, its preparation and its closing
+                # may start the source without GPUs for a few minutes (the user was told so when enabling)
+                allowed = bool(grp and grp.get("settings", {}).get("enabled") and clone is not None)
+            if not allowed:
                 out({"ok": False, "instance": iid, "reason": f"no grant for {a.mode} use of {iid}: ask the user, "
                                                              "then ctl auth grant"})
                 return EXIT_NO_GRANT
@@ -1836,8 +2562,23 @@ def cmd_auth_check(a) -> int:
                         f"--instance {iid} --booted-at <booted_at> --field mode=... --field price=... --field gpus=...; "
                         "then probe again")})
                     return EXIT_ERR
+            if a.clone_host is not None:   # no reservation for a clone without its record: the record comes first
+                if clone is None or clone["source"] != iid or clone["stage"] != "reserve" or a.clone_host not in clone["hosts"]:
+                    out({**said, "reason": (
+                        f"a reservation for a clone on {a.clone_host} needs an open clone record of {iid} that is at "
+                        "reserve and allows this host (ctl clone-record open, then update --stage ticket and --stage "
+                        "reserve): " + ("there is none" if clone is None else
+                                        f"the open one ({clone['txn']}) is at {clone['stage']}, of {clone['source']}, "
+                                        f"for {', '.join(clone['hosts'])}"))})
+                    return EXIT_ERR
+                held = open_clone_reservations(recs)
+                if held:
+                    out({**said, "reason": f"the clone's reservation {held[0]['req']} is open already: use it, or release "
+                                           "it first (ctl auth release)"})
+                    return EXIT_ERR
             expires = now + window_s + 600
-            periods, fail = _judge(g, recs, now, expires, a.mode, a.gpus, price, window_s)
+            # the budget is the group's: what every member's ledger says was spent counts against it
+            periods, fail = _judge(g, group_books(st.data, iid), now, expires, a.mode, a.gpus, price, window_s, daily)
             if fail is not None:
                 out({"ok": False, "instance": iid, **fail, "periods": periods, **counted})
                 return EXIT_BUDGET
@@ -1845,13 +2586,21 @@ def cmd_auth_check(a) -> int:
                 _hook("check-decided")
                 req = secrets.token_hex(8)
                 recs.append({"kind": "reserve", "key": f"reserve:{req}", "req": req, "at": now, "expires": expires,
-                             "mode": a.mode, "gpus": a.gpus, "price_fen_h": price, "window_s": window_s})
+                             "mode": a.mode, "gpus": a.gpus, "price_fen_h": price, "window_s": window_s,
+                             **({"clone_host": a.clone_host} if a.clone_host is not None else {}),
+                             **({"daily_fen": daily} if daily else {})})
                 st.save()
     except StoreError as e:
         out({"ok": False, "instance": iid, "reason": f"the local record cannot be used, so no power-on: {e}"})
         return EXIT_STORE
     if a.probe:
         res = {"ok": True, "probe": True, "instance": iid, "periods": periods, **counted}
+    elif a.clone_host is not None:
+        res = {"ok": True, "instance": iid, "req": req, "expires": expires, "periods": periods, "clone_host": a.clone_host,
+               "next": f"put this request into the clone record with the rest (clone-record update --stage click --set "
+                       f"req={req} ...), note T0 with ctl now, click once. When the new instance is identified, ctl auth "
+                       f"inherit --from {iid} --to <its ID> --req {req}, then ctl log on --instance <its ID> --req {req} "
+                       f"--at <T0> --field ...; if nothing was created, ctl auth release --instance {iid} --req {req}"}
     else:
         res = {"ok": True, "instance": iid, "req": req, "expires": expires, "periods": periods,
                "next": f"note T0 with ctl now and power on, then ctl log on --instance ID --req {req} --at <T0> "
@@ -1867,27 +2616,150 @@ def cmd_auth_check(a) -> int:
 
 
 def cmd_auth_release(a) -> int:
+    """Drop a reservation whose power-on did not happen. A clone's reservation moves from the source's ledger to the
+    new instance's when the new instance is adopted (auth inherit): so it is looked for in the ledgers of the whole
+    budget group, the named instance's first, and released where it is open."""
     iid = need_instance(a.instance)
     if not REQ_RE.match(a.req or ""):
         raise ValueError(f"--req {a.req!r}: the request ID auth check gave")
     with Store() as st:
-        recs = st.data["ledger"].get(iid)
-        if recs is None or not any(r["key"] == f"reserve:{a.req}" for r in recs):
-            raise ValueError(f"no reservation {a.req} for {iid}")
-        if any(r["key"] == f"release:{a.req}" for r in recs):
-            out({"instance": iid, "released": a.req, "note": "it was released before"})
+        books = [(x, st.data["ledger"].get(x)) for x in group_ids(st.data, iid)]
+        have = [(x, recs) for x, recs in books if recs is not None and any(r["key"] == f"reserve:{a.req}" for r in recs)]
+        if not have:
+            raise ValueError(f"no reservation {a.req} for {iid}" + (" or its budget group" if len(books) > 1 else ""))
+        where = next(((x, recs) for x, recs in have if any(r["req"] == a.req for r in open_reservations(recs))), None)
+        if where is None:
+            used = next((x for x, recs in have if any(r["kind"] == "on" and r.get("req") == a.req for r in recs)), None)
+            if used is not None:
+                raise ValueError(f"reservation {a.req} was used by a power-on of {used}; power off and log off instead")
+            out({"instance": have[-1][0], "released": a.req, "note": "it was released before"})
             return 0
-        if any(r["kind"] == "on" and r.get("req") == a.req for r in recs):
-            raise ValueError(f"reservation {a.req} was used by a power-on; power off and log off instead")
-        recs.append({"kind": "release", "key": f"release:{a.req}", "req": a.req, "at": now_s()})
+        where[1].append({"kind": "release", "key": f"release:{a.req}", "req": a.req, "at": now_s()})
         st.save()
-    out({"instance": iid, "released": a.req})
+    out({"instance": where[0], "released": a.req})
     return 0
 
 
-def _charge_row(row, iid: str, now: int) -> dict:
-    if not isinstance(row, dict) or set(row) != {"serial", "instance", "time", "amount"}:
-        raise ValueError(f"a row needs exactly serial, instance, time and amount: {row!r}")
+def group_books(data: dict, iid: str) -> list:
+    """The ledgers that share IID's budget: its own, and those of the other members of its budget group."""
+    return [data["ledger"].get(x, []) for x in group_ids(data, iid)]
+
+
+@refusing
+def cmd_auth_inherit(a) -> int:
+    """The new instance of a clone takes over the source's authorization, in one write (design 5.7): a grant with the
+    same terms, the clone's reservation (released in the source's ledger, entered in the new one's, where the power-on
+    then uses it), the daily fee of its disk from the reservation's time on, and its place in the source's budget
+    group. A resend changes nothing."""
+    src, to = need_instance(a.src), need_instance(a.to)
+    if not REQ_RE.match(a.req or ""):
+        raise ValueError(f"--req {a.req!r}: the request ID auth check gave for the clone")
+    daily = 0 if a.daily is None else yuan_to_fen(a.daily, "--daily")
+    if a.new_alias is not None:
+        check_alias(a.new_alias)
+    with Store() as st:
+        now = now_s()
+        if src == to:
+            raise Refused("--from and --to name the same instance")
+        _, grp = group_of(st.data, src)
+        rec = open_clone_record(st.data, grp)
+        if rec is None or rec["source"] != src or rec.get("req") != a.req:
+            raise Refused(f"{src} has no open clone record that names the request {a.req}: the record gets the request "
+                          "with the click (clone-record update --stage click --set req=...), and inherit comes after it")
+        if any(m["instance"] == to and m.get("from") == src and m.get("txn") == rec["txn"] for m in grp["members"]):
+            out({"ok": True, "from": src, "to": to, "req": a.req, "inherited": False,
+                 "note": "it was inherited before: nothing was changed"})
+            return 0
+        # the first time: only once the click was answered and the record names this very instance. Earlier, the
+        # reservation and the grant would move to an ID that nothing was created for, out of the reach of the record
+        if rec["stage"] != "clicked" or rec.get("instance") != to:
+            raise Refused(f"the clone {rec['txn']} is at {rec['stage']} and names {rec.get('instance') or 'no new instance'}: "
+                          "inherit comes once the click was answered (clone-record update --stage clicked) and the record "
+                          f"names {to} as the new instance (clone-record update --set instance={to})")
+        g = st.data["grants"].get(src)
+        if g is None:
+            raise Refused(f"{src} has no grant to hand on")
+        recs = st.data["ledger"].get(src, [])
+        r = next((x for x in open_clone_reservations(recs) if x["req"] == a.req), None)
+        if r is None:
+            raise Refused(f"the ledger of {src} has no open clone reservation {a.req} (released, used, or made without "
+                          "--clone-host)")
+        if host_of(to) != r["clone_host"]:
+            raise Refused(f"{to} is not on the host this reservation was made for ({r['clone_host']})")
+        if daily != r.get("daily_fen", 0):
+            raise Refused(f"the reservation carries a daily fee of {r.get('daily_fen', 0)} fen, --daily says {daily}: give "
+                          "the fee the check was made with (none when it had none)")
+        if to in st.data["grants"] or st.data["ledger"].get(to) or group_of(st.data, to)[1] is not None:
+            raise Refused(f"{to} is known here already (a grant, a ledger or a budget group): a new clone has none")
+        ng = {k: copy.deepcopy(g[k]) for k in ("usage", "budget", "period", "period_tz", "quote", "approvals")}
+        ng.update(alias=a.new_alias or g["alias"], at=now)
+        if "since" in g:
+            ng["since"] = g["since"]
+        if g["budget"]["kind"] == "fen" and g["period"] == "month":
+            ng["charges_read"] = now   # the new instance has no charges before now: nothing is left to import
+        st.data["grants"][to] = ng
+        recs.append({"kind": "release", "key": f"release:{a.req}", "req": a.req, "at": now})
+        book = st.data["ledger"].setdefault(to, [])
+        book.append({k: v for k, v in r.items() if k != "daily_fen"})
+        if daily:   # from the reservation's time on, as the reservation counted it: no gap and nothing twice
+            book.append({"kind": "daily", "key": f"daily:{r['at']}", "at": r["at"], "fen_day": daily})
+        _, grp = own_group(st.data, src, now)
+        grp["members"].append({"instance": to, "at": now, "from": src, "txn": rec["txn"]})
+        st.save()
+        members = [m["instance"] for m in grp["members"]]
+    out({"ok": True, "from": src, "to": to, "req": a.req, "inherited": True, "group": members,
+         "next": f"ctl log on --instance {to} --req {a.req} --at <T0> --field mode=gpu --field price=... --field gpus=..., "
+                 "then clone-record update --stage adopted"})
+    return 0
+
+
+@refusing
+def cmd_auth_released(a) -> int:
+    """After the user released an instance and the console no longer shows it: its daily disk fee ends at that time,
+    its grant goes, and the budget group remembers that it is gone. The ledger and the group stay. A resend changes
+    nothing."""
+    iid = need_instance(a.instance)
+    with Store() as st:
+        now = now_s()
+        if not 0 < a.at <= now + 300:
+            raise ValueError(f"--at {a.at}: a unix time after 1970 and at most five minutes after now ({now})")
+        recs = st.data["ledger"].get(iid)
+        if recs is None:
+            raise Refused(f"{iid} is not known here")
+        op = _open_session(recs)
+        if op is not None:
+            raise Refused(f"session {op['sid']} is open on {iid}: record its power-off first (ctl log off)")
+        _, grp = group_of(st.data, iid)
+        member = next((m for m in grp["members"] if m["instance"] == iid), None) if grp else None
+        changed = False
+        if member is None or "released_at" not in member:
+            _, grp = own_group(st.data, iid, now)
+            next(m for m in grp["members"] if m["instance"] == iid)["released_at"] = a.at
+            changed = True
+        if daily_now(recs, max(now, a.at)) != 0:
+            last = max((r["at"] for r in recs if r["kind"] == "daily"), default=-1)
+            if a.at <= last:
+                raise Refused(f"a daily fee is recorded from {last} on, which is not before the release ({a.at})")
+            recs.append({"kind": "daily", "key": f"daily:{a.at}", "at": a.at, "fen_day": 0})
+            changed = True
+        if st.data["grants"].pop(iid, None) is not None:
+            changed = True
+        if changed:
+            st.save()
+        view = clone_view(st.data, iid, now)
+    out({"ok": True, "instance": iid, "released_at": a.at, "changed": changed, "clone": view,
+         "note": "its grant is gone and its daily fee has ended; the ledger and the budget group are kept"})
+    return 0
+
+
+def _charge_row(row, iid: str, now: int, recs: list) -> dict:
+    """One row of the billing detail as a charge record. disk (true or false) says whether it is the data disk's daily
+    charge (its remark ends in 数据盘); the two kinds are reconciled apart (_estimate_and_charged). A row at 23:59:59
+    Beijing time, on an instance with a daily fee in force then, may be either, so there it must say which. Only a
+    disk charge carries the mark in the ledger."""
+    base = {"serial", "instance", "time", "amount"}
+    if not isinstance(row, dict) or not base <= set(row) <= base | {"disk"}:
+        raise ValueError(f"a row needs serial, instance, time and amount, and may say disk (true or false): {row!r}")
     if not _match(SERIAL_RE, row["serial"]):
         raise ValueError(f"serial {row['serial']!r}: letters, digits and ._- only")
     if row["instance"] != iid:
@@ -1904,7 +2776,19 @@ def _charge_row(row, iid: str, now: int) -> dict:
     fen = yuan_to_fen(row["amount"], f"row {row['serial']}: amount")
     if fen < 1:
         raise ValueError(f"row {row['serial']}: the amount must be positive")
-    return {"kind": "charge", "key": f"charge:{row['serial']}", "serial": row["serial"], "at": at, "fen": fen}
+    if "disk" in row and type(row["disk"]) is not bool:
+        raise ValueError(f"row {row['serial']}: disk is true or false")
+    if row.get("disk") is True and (at - DAILY_AT) % DAY_S != 0:
+        raise ValueError(f"row {row['serial']}: the data disk is charged at 23:59:59 Beijing time only, and this row is "
+                         f"at {row['time']}: it is a power-on's charge (leave disk out), or the row was copied wrong")
+    if "disk" not in row and (at - DAILY_AT) % DAY_S == 0 and daily_now(recs, at) > 0:
+        raise ValueError(f"row {row['serial']}: it is at 23:59:59 Beijing time, when the daily fee of this instance's "
+                         "data disk is charged, so say which it is: \"disk\": true for the data disk's charge (its remark "
+                         "ends in 数据盘), \"disk\": false for a power-on's")
+    rec = {"kind": "charge", "key": f"charge:{row['serial']}", "serial": row["serial"], "at": at, "fen": fen}
+    if row.get("disk"):
+        rec["disk"] = True
+    return rec
 
 
 def cmd_auth_charges(a) -> int:
@@ -1918,16 +2802,16 @@ def cmd_auth_charges(a) -> int:
         raise ValueError("the charges are a JSON list of rows ([] when the billing detail shows none)")
     with Store() as st:
         now = now_s()
-        new = [_charge_row(r, iid, now) for r in rows]
         recs = st.data["ledger"].get(iid)
         if recs is None:
             raise ValueError(f"{iid} is not known here: grant it, or log a power-on for it, first")
+        new = [_charge_row(r, iid, now, recs) for r in rows]
         have = {r["key"]: r for r in recs}
         added = 0
         for c in new:
             old = have.get(c["key"])
             if old is not None and old != c:
-                raise ValueError(f"charge {c['serial']} is already recorded with another time or amount")
+                raise ValueError(f"charge {c['serial']} is already recorded with another time, amount or disk mark")
             if old is None:
                 have[c["key"]] = c
                 recs.append(c)
@@ -1940,6 +2824,791 @@ def cmd_auth_charges(a) -> int:
             st.save()
     out(res)
     return 0
+
+
+def cmd_auth_daily(a) -> int:
+    """The daily fee of an instance's expanded data disk (charged every day at 23:59:59 Beijing time, on or off), so
+    that a money budget counts it. Without --from it counts from the start of the instance's current budget period:
+    rather too much than too little, and charges imported since are not counted twice. A fee of 0 ends it. The fee that
+    is in force already is not recorded again."""
+    iid = need_instance(a.instance)
+    fee = yuan_to_fen(a.fee, "--fee")
+    with Store() as st:
+        now = now_s()
+        recs = st.data["ledger"].get(iid)
+        if recs is None:
+            raise ValueError(f"{iid} is not known here: grant it, or log a power-on for it, first")
+        if a.since is None:
+            start = period_of(now, st.data["grants"].get(iid) or DEFAULT_PERIOD)[1]
+            if start == 0:   # a budget without periods from before ctl kept its start: from the ledger's first record
+                start = min((r["at"] for r in recs), default=now)
+        else:
+            start = a.since
+            if not 0 < start <= now + 300:
+                raise ValueError(f"--from {start}: a unix time after 1970 and at most five minutes after now ({now})")
+        ds = [r for r in recs if r["kind"] == "daily"]
+        res = {"instance": iid, "daily_fen": fee, "from": start}
+        # without --from the question is whether this fee is being counted: it is when it is the fee in force now.
+        # With --from it is whether the fee changes at that time
+        same = daily_now(recs, now) == fee if a.since is None else (daily_now(recs, start) == fee
+                                                                    and (not ds or start >= ds[-1]["at"]))
+        if same:
+            res.update(recorded=False, note="this fee is in force already (or none is, and none was asked for): "
+                                            "nothing was written")
+        elif ds and start <= ds[-1]["at"]:
+            raise ValueError(f"a daily fee of {ds[-1]['fen_day']} fen is recorded from {ds[-1]['at']} on: another fee "
+                             "can only follow it, so give the time it changed with --from (later than that)")
+        else:
+            recs.append({"kind": "daily", "key": f"daily:{start}", "at": start, "fen_day": fee})
+            st.save()
+            res["recorded"] = True
+    out(res)
+    return 0
+
+
+# ---- the clone ticket (plan task 11.6; design 5.2) ----
+# A small file on the system disk, which a clone copies: on one of the hosts it names, a loop started at container
+# start shuts the instance down once the deadline has passed and the boot is older than the grace, unless ctl has taken
+# the instance over and removed the file. The two locks and the receipt live on the memory disk: they mean something
+# within one boot only, and must not be cloned along.
+HOOK_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"   # as the guard's autostart hook sets it
+TICKET = {"dir": "/etc/profile.d", "ticket": "/etc/profile.d/autodl-gpu-clone-ticket.sh",
+          "lock": "/dev/shm/autodl-gpu-clone-ticket.lock",       # held while deciding: the loop, and ctl's changes
+          "alive": "/dev/shm/autodl-gpu-clone-ticket.alive",     # held by the loop for as long as it lives; holds its PID
+          "receipt": "/dev/shm/autodl-gpu-clone-ticket.receipt",
+          "period": 30, "shutdown": "/usr/bin/shutdown", "path": HOOK_PATH}
+TICKET_TAG = "autodl-gpu-clone-ticket-loop"
+TICKET_HEAD = "# autodl-gpu clone ticket"
+TICKET_GRACE_S = 900
+# The loop, run as: bash -p -c LOOP TAG ticket lock alive receipt period shutdown-command. It holds no single quote
+# (the ticket carries it between single quotes) and reads the ticket anew at every turn. Children never inherit the
+# lock that says the loop is alive (8>&-), so a killed loop does not look alive.
+TICKET_LOOP = r"""T="$1" L="$2" A="$3" R="$4" P="$5" S="$6"
+field() {
+  local k="# $1=" v
+  while IFS= read -r v; do
+    case "$v" in "$k"*) printf "%s" "${v#"$k"}"; return 0 ;; esac
+  done < "$T"
+  return 1
+}
+up() { local u _; read -r u _ < /proc/uptime || return 1; printf "%s" "${u%%.*}"; }
+M="$(field mark)" || exit 0
+N="$(uname -n 2> /dev/null)"
+[ "$N" != "$(field source)" ] || exit 0
+H="${N#autodl-container-}"; H="${H%%-*}"
+case " $(field hosts) " in *" $H "*) ;; *) exit 0 ;; esac
+exec 8>> "$A" || exit 0
+flock -n 8 || exit 0
+printf "%s\n" "$$" > "$A"
+U0="$(up)"
+case "$U0" in ""|*[!0-9]*) U0="" ;; esac
+while :; do
+  sleep "$P" 8>&-
+  exec 9>> "$L" || continue
+  flock -w 20 9 8>&- || { exec 9>&-; continue; }
+  if [ ! -e "$T" ] || [ "$(field mark)" != "$M" ]; then
+    printf "%s gone %s %s\n" "$M" "$$" "$(date +%s)" >> "$R"
+    exit 0
+  fi
+  D="$(field deadline)"; G="$(field grace)"; C="$(date +%s)"; U="$(up)"; E="$SECONDS"
+  case "$D" in ""|*[!0-9]*) D=0 ;; esac
+  case "$G" in ""|*[!0-9]*) G=900 ;; esac
+  case "$C" in ""|*[!0-9]*) C=0 ;; esac
+  case "$U0$U" in *[!0-9]*) ;; *) if [ -n "$U0" ] && [ -n "$U" ]; then E=$((U - U0)); fi ;; esac
+  if [ "$C" -ge "$D" ] && [ "$E" -ge "$G" ]; then
+    printf "%s shutdown %s %s\n" "$M" "$$" "$C" >> "$R"
+    "$S" 8>&- 9>&-
+  fi
+  flock -u 9
+  exec 9>&-
+done
+"""
+# what every remote script of ctl ticket starts with: the paths, how to read a field, whether a loop is alive
+TICKET_SH = r"""T=@ticket@; L=@lock@; A=@alive@; R=@receipt@
+tfield() {
+  local k="# $1=" v
+  [ -r "$T" ] || return 1
+  while IFS= read -r v; do
+    case "$v" in "$k"*) printf "%s" "${v#"$k"}"; return 0 ;; esac
+  done < "$T"
+  return 1
+}
+loop_alive() {
+  [ -e "$A" ] || return 1
+  exec 7>> "$A" || return 1
+  if flock -n 7; then flock -u 7; exec 7>&-; return 1; fi
+  exec 7>&-
+  return 0
+}
+take_lock() {
+  command -v flock > /dev/null 2>&1 || { echo "error: flock is missing on this instance" >&2; exit 3; }
+  { exec 9>> "$L"; } 2> /dev/null && flock -w 20 9 || { echo "error: cannot take the ticket's lock" >&2; exit 6; }
+}
+"""
+
+
+def _ticket_sh(cfg: dict) -> str:
+    q = shlex.quote
+    return (TICKET_SH.replace("@ticket@", q(cfg["ticket"])).replace("@lock@", q(cfg["lock"]))
+            .replace("@alive@", q(cfg["alive"])).replace("@receipt@", q(cfg["receipt"])))
+
+
+def ticket_launch(cfg: dict) -> str:
+    """The command that starts the loop, detached: what the ticket's hook runs in process 1, and what ticket start
+    runs over SSH."""
+    q = shlex.quote
+    return ("( /usr/bin/env PATH=" + q(cfg["path"]) + " setsid /bin/bash -p -c " + q(TICKET_LOOP) + " " + TICKET_TAG + " "
+            + " ".join(q(str(cfg[k])) for k in ("ticket", "lock", "alive", "receipt", "period", "shutdown"))
+            + " < /dev/null > /dev/null 2>&1 & ) > /dev/null 2>&1")
+
+
+def ticket_text(mark: str, source: str, hosts: list, deadline, grace_s: int, cfg: dict | None = None) -> str:
+    """The ticket: five lines of data as comments, then a hook. Sourced by process 1 of a container (on AutoDL that is
+    bash /init/boot/boot.sh, which sources /etc/profile) it starts the loop and returns at once; sourced by any other
+    process it does nothing. The hook asks only whether the shell is process 1, in words every shell knows: the guard's
+    autostart also asks for bash and for the boot script's name, but a clone that boots another way than its source did
+    must not be left without the loop. A second start is harmless (the loop holds a lock). It defines nothing, prints
+    nothing and never fails."""
+    cfg = cfg or TICKET
+    return (f"{TICKET_HEAD} (written by ctl ticket write of the autodl-gpu skill; ctl ticket clear removes it)\n"
+            f"# mark={mark}\n# source={source}\n# hosts={' '.join(hosts)}\n# deadline={deadline}\n# grace={grace_s}\n"
+            "# An instance cloned from this system disk carries this file. On one of the hosts above, a loop started at\n"
+            "# container start shuts the instance down once the deadline has passed and this boot is older than the grace,\n"
+            "# unless the clone was taken over and this file removed. On any other host, and on the source, it does nothing.\n"
+            'if [ "$$" = 1 ]; then\n'
+            "    " + ticket_launch(cfg) + " || :\n"
+            "fi\n:\n")
+
+
+def ticket_write_script(mark: str, secs: int, cfg: dict | None = None) -> str:
+    """Remote: put the ticket (stdin, with @DEADLINE@ where the deadline goes) in place under the ticket's lock. The
+    deadline is this instance's clock plus SECS. It answers the deadline and the SHA-256 of what is there now. Refused
+    (3) where the loop could not run: the clone has this system disk, so what is missing here is missing there."""
+    cfg = cfg or TICKET
+    q = shlex.quote
+    return _ticket_sh(cfg) + f"""take_lock
+[ -d {q(cfg["dir"])} ] || {{ echo "error: {cfg["dir"]} does not exist: nothing would run the ticket at container start" >&2; exit 3; }}
+need="$( PATH={q(cfg["path"])}; for x in setsid flock uname date sleep; do command -v "$x" > /dev/null 2>&1 || {{ echo "$x is not in the PATH it gets"; exit 1; }}; done; t="$(date +%s 2> /dev/null)"; case "$t" in ""|*[!0-9]*) echo "date +%s gives no time"; exit 1 ;; esac )" || {{ echo "error: the ticket's loop could not run here ($need), so no ticket is written" >&2; exit 3; }}
+for f in /bin/bash /usr/bin/env {q(cfg["shutdown"])}; do [ -x "$f" ] || {{ echo "error: $f is missing or cannot be run: the ticket's loop could not start or shut down, so no ticket is written" >&2; exit 3; }}; done
+if [ -e "$T" ]; then
+  m="$(tfield mark)"
+  [ "$m" = {q(mark)} ] || {{ echo "error: a ticket of another clone is there (mark $m): it is left alone" >&2; exit 3; }}
+fi
+D=$(( $(date +%s) + {int(secs)} ))
+tmp="$T.tmp.$$"
+trap 'rm -f -- "$tmp"' EXIT
+body="$(cat)" || exit 1
+printf '%s\\n' "${{body//@DEADLINE@/$D}}" > "$tmp" && chmod 644 "$tmp" && mv -f -- "$tmp" "$T" || {{ echo "error: cannot write $T" >&2; exit 1; }}
+echo "deadline=$D"
+echo "sha256=$(sha256sum < "$T" | cut -d' ' -f1)"
+"""
+
+
+def ticket_read_script(cfg: dict | None = None) -> str:
+    """Remote, read-only: the ticket's fields, whether its loop is alive, this instance's clock and host name, and the
+    last lines of the receipt."""
+    cfg = cfg or TICKET
+    return _ticket_sh(cfg) + """if command -v flock > /dev/null 2>&1; then echo flock=1; else echo flock=0; fi
+echo "now=$(date +%s)"
+echo "host=$(uname -n 2> /dev/null)"
+if [ -e "$T" ]; then
+  echo present=1
+  for k in mark source hosts deadline grace; do echo "$k=$(tfield "$k")"; done
+  echo "sha256=$(sha256sum < "$T" | cut -d' ' -f1)"
+else
+  echo present=0
+fi
+if loop_alive; then echo loop=1; echo "loop_pid=$(cat "$A" 2> /dev/null)"; else echo loop=0; fi
+if [ -r "$R" ]; then tail -n 20 "$R" | while IFS= read -r line; do echo "receipt=$line"; done; fi
+"""
+
+
+def ticket_extend_script(mark: str, secs: int, cfg: dict | None = None) -> str:
+    """Remote: under the ticket's lock, replace the deadline line by this instance's clock plus SECS."""
+    cfg = cfg or TICKET
+    q = shlex.quote
+    return _ticket_sh(cfg) + f"""take_lock
+[ -e "$T" ] || {{ echo "error: no ticket on this instance" >&2; exit 3; }}
+[ "$(tfield mark)" = {q(mark)} ] || {{ echo "error: the ticket here carries another mark: it is left alone" >&2; exit 3; }}
+D=$(( $(date +%s) + {int(secs)} ))
+tmp="$T.tmp.$$"
+trap 'rm -f -- "$tmp"' EXIT
+while IFS= read -r line; do
+  case "$line" in "# deadline="*) line="# deadline=$D" ;; esac
+  printf '%s\\n' "$line"
+done < "$T" > "$tmp" && chmod 644 "$tmp" && mv -f -- "$tmp" "$T" || {{ echo "error: cannot write $T" >&2; exit 1; }}
+echo "deadline=$D"
+for k in mark source hosts grace; do echo "$k=$(tfield "$k")"; done
+echo "sha256=$(sha256sum < "$T" | cut -d' ' -f1)"
+"""
+
+
+def ticket_start_script(mark: str, cfg: dict | None = None) -> str:
+    """Remote: start the ticket's loop when none runs, and say whether one runs afterwards."""
+    cfg = cfg or TICKET
+    q = shlex.quote
+    return _ticket_sh(cfg) + f"""command -v flock > /dev/null 2>&1 || {{ echo "error: flock is missing on this instance" >&2; exit 3; }}
+[ -e "$T" ] || {{ echo "error: no ticket on this instance" >&2; exit 3; }}
+[ "$(tfield mark)" = {q(mark)} ] || {{ echo "error: the ticket here carries another mark" >&2; exit 3; }}
+if loop_alive; then echo started=0; echo loop=1; exit 0; fi
+{ticket_launch(cfg)}
+i=0
+until loop_alive; do i=$((i + 1)); [ "$i" -le 10 ] || break; sleep 0.5; done
+echo started=1
+if loop_alive; then
+  echo loop=1
+else
+  echo loop=0
+  echo "error: the loop did not stay up (it leaves at once on a host the ticket does not name, and on the source)" >&2
+  exit 1
+fi
+"""
+
+
+def ticket_clear_script(mark: str, source: bool, cfg: dict | None = None) -> str:
+    """Remote: take the ticket away. On the new instance (not SOURCE) only once the guard is armed by an arm of this
+    boot and alive, under the lock the loop decides under, and then the loop must be seen to leave; refused (4) when
+    the loop has issued the shutdown already. On the source, where the ticket does nothing, it is simply removed, after
+    checking that this is the ticket's source and not one of its hosts. A ticket that is gone already is fine."""
+    cfg = cfg or TICKET
+    q = shlex.quote
+    head = _ticket_sh(cfg) + "take_lock\n"
+    if source:
+        return head + f"""if [ ! -e "$T" ]; then echo removed=0; exit 0; fi
+[ "$(tfield mark)" = {q(mark)} ] || {{ echo "error: the ticket here carries another mark: it is left alone" >&2; exit 3; }}
+N="$(uname -n 2> /dev/null)"
+[ "$(tfield source)" = "$N" ] || {{ echo "error: this instance is not the ticket's source" >&2; exit 3; }}
+H="${{N#autodl-container-}}"; H="${{H%%-*}}"
+case " $(tfield hosts) " in *" $H "*) echo "error: this host is one of the ticket's hosts: here the ticket is live, clear it without --source" >&2; exit 3 ;; esac
+rm -f -- "$T"
+[ ! -e "$T" ] || {{ echo "error: cannot remove $T" >&2; exit 1; }}
+echo removed=1
+"""
+    wait_s = 2 * int(cfg["period"]) + 10
+    # the receipt lives on the memory disk: a shutdown noted in it was issued in this boot, whether or not the loop
+    # that issued it still runs (the shutdown itself may have ended it)
+    return head + f"""if grep -q "^{mark} shutdown " "$R" 2> /dev/null; then
+  echo "error: the ticket's loop has issued the shutdown of this instance already" >&2
+  exit 4
+fi
+if [ -e "$T" ]; then
+  [ "$(tfield mark)" = {q(mark)} ] || {{ echo "error: the ticket here carries another mark: it is left alone" >&2; exit 3; }}
+  st="$(bash {q(GUARD_PATH)} status 2> /dev/null)" || {{ echo "error: the guard's status cannot be read: the ticket stays" >&2; exit 3; }}
+  for want in armed_this_boot=1 armed_by=arm needs_rearm=0 daemon_alive=1; do
+    printf '%s\\n' "$st" | grep -qx "$want" || {{ echo "error: the guard is not armed by an arm of this boot and alive ($want is not so): the ticket stays" >&2; exit 3; }}
+  done
+  rm -f -- "$T"
+  [ ! -e "$T" ] || {{ echo "error: cannot remove $T" >&2; exit 1; }}
+  echo removed=1
+else
+  echo removed=0
+fi
+flock -u 9
+exec 9>&-
+i=0
+while loop_alive; do
+  i=$((i + 1))
+  [ "$i" -le {wait_s} ] || {{ echo handoff=pending; echo "error: the ticket is gone, but its loop has not left within {wait_s}s" >&2; exit 6; }}
+  sleep 1
+done
+echo handoff=complete
+"""
+
+
+def ticket_remote(alias: str, script: str, *, stdin: bytes | None = None, timeout: int = 90) -> tuple:
+    """Run one of the ticket's remote scripts: (exit code as ctl gives it, its key=value answer, what it said on
+    stderr). Each of them may be sent again: they change nothing twice."""
+    r = ssh_run(alias, script, stdin=stdin, timeout=timeout, retry_uncertain=True)
+    kv: dict = {"receipts": []}
+    for line in text(r.stdout).splitlines():
+        k, sep, v = line.partition("=")
+        if sep and k == "receipt":
+            kv["receipts"].append(v)
+        elif sep:
+            kv[k] = v
+    said = " ".join(text(r.stderr).split())
+    if r.state == "not_run":
+        return EXIT_UNREACHABLE, kv, f"ssh did not get through ({r.attempts} attempts): {log_tail(r.log)}"
+    if r.state == "uncertain" or r.rc == 255:
+        return EXIT_UNCERTAIN, kv, f"the command did not report back: {log_tail(r.log)}"
+    return {0: 0, 3: EXIT_REFUSED, 4: EXIT_PENDING, 6: EXIT_UNCERTAIN}.get(r.rc, EXIT_ERR), kv, said
+
+
+def ticket_record(txn: str, closed_ok: bool = False) -> dict:
+    """The clone record a ticket command names, as the local record has it now (a copy)."""
+    with Store() as st:
+        if not closed_ok:
+            return copy.deepcopy(find_open_record(st.data, txn))
+        if not TXN_RE.match(txn or ""):
+            raise ValueError(f"--txn {txn!r}: the transaction ID that clone-record open gave (16 hex digits)")
+        rec = (st.data.get("clones") or {"records": {}})["records"].get(txn)
+        if rec is None:
+            raise Refused(f"no clone record has the transaction ID {txn}: nothing was sent")
+        return copy.deepcopy(rec)
+
+
+def ticket_note(txn: str, **fields) -> str:
+    """After a ticket command did its work on the instance: keep that in the clone record (an open one only) and in
+    its copy. What was done about the copy."""
+    with Store() as st:
+        rec = (st.data.get("clones") or {"records": {}})["records"].get(txn)
+        if rec is None or "closed_at" in rec:
+            return "the clone record is closed: nothing was noted in it"
+        rec.update(fields)
+        st.save()
+        rec = copy.deepcopy(rec)
+    return write_clone_copy(rec)
+
+
+def _ticket_on(rec: dict, want: str, alias: str) -> None:
+    """The command is for the clone's source or its new instance: the alias must be bound to that one."""
+    iid = rec["source"] if want == "source" else rec.get("instance")
+    if iid is None:
+        raise Refused("the clone record names no new instance yet (clone-record update --set instance=ID): nothing was sent")
+    if BOUND != iid:
+        raise Refused(f"{alias} is bound to {BOUND}, and this is for the clone's {'source' if want == 'source' else 'new instance'} "
+                      f"{iid}: nothing was sent")
+
+
+def _ticket_fail(rc: int, kv: dict, said: str, **more) -> int:
+    out({"ok": False, **more, **{k: v for k, v in kv.items() if k != "receipts"}, "error": said or "the remote command failed"})
+    return rc
+
+
+@refusing
+def cmd_ticket_write(a) -> int:
+    """Put the clone ticket on the source (design 5.2), which a clone then carries: read back and compared, and noted
+    in the clone record. Again with the same transaction: the deadline is written anew."""
+    secs, grace = parse_duration_s(a.deadline), parse_duration_s(a.grace)
+    if not 60 <= secs or not 60 <= grace <= 3600:
+        raise ValueError("--deadline: at least a minute; --grace: a minute to an hour")
+    rec = ticket_record(a.txn)
+    _ticket_on(rec, "source", a.alias)
+    if rec["stage"] != "ticket":
+        raise Refused(f"this clone is at {rec['stage']}: the ticket is written at ticket (clone-record update --stage ticket)")
+    if sorted((a.hosts or "").split(",")) != sorted(rec["hosts"]):
+        raise Refused(f"--hosts differs from the hosts in the clone record ({','.join(rec['hosts'])}): nothing was sent")
+    source = f"autodl-container-{rec['source']}"
+    rc, kv, said = ticket_remote(a.alias, ticket_write_script(a.txn, secs),
+                                 stdin=ticket_text(a.txn, source, rec["hosts"], "@DEADLINE@", grace).encode())
+    if rc != 0:
+        return _ticket_fail(rc, kv, said, txn=a.txn)
+    d = kv.get("deadline", "")
+    want = hashlib.sha256(ticket_text(a.txn, source, rec["hosts"], d, grace).encode()).hexdigest() if d.isdigit() else None
+    if want is None or kv.get("sha256") != want:
+        return _ticket_fail(EXIT_ERR, kv, "the ticket does not read back as it was written: do not clone on it; write it "
+                                          "again, or clear it (ticket clear --source)", txn=a.txn)
+    out({"ok": True, "txn": a.txn, "deadline": int(d), "grace_s": grace, "hosts": rec["hosts"], "sha256": want,
+         "copy": ticket_note(a.txn, source_ticket="present", ticket_deadline=int(d))})
+    return 0
+
+
+def cmd_ticket_read(a) -> int:
+    """Read-only: the ticket on this instance and whether its loop runs. With --txn it also says whether the ticket is
+    that clone's (exit 1 when it is not there, or carries another mark)."""
+    rc, kv, said = ticket_remote(a.alias, ticket_read_script())
+    if rc != 0:
+        return _ticket_fail(rc, kv, said)
+    res = {"ok": True, "present": kv.get("present") == "1", "loop": kv.get("loop") == "1", "host": kv.get("host"),
+           "flock": kv.get("flock") == "1", "now": int(kv["now"]) if kv.get("now", "").isdigit() else None,
+           "receipts": kv["receipts"]}
+    if "loop_pid" in kv:
+        res["loop_pid"] = kv["loop_pid"]
+    if res["present"]:
+        hosts = kv.get("hosts", "").split()
+        d = kv.get("deadline", "")
+        res.update(mark=kv.get("mark"), source=kv.get("source"), hosts=hosts, grace_s=kv.get("grace"), sha256=kv.get("sha256"),
+                   deadline=int(d) if d.isdigit() else d, is_source=kv.get("source") == kv.get("host"),
+                   allowed=host_of(BOUND or "") in hosts)
+        if d.isdigit() and res["now"] is not None:
+            res["deadline_in_s"] = int(d) - res["now"]
+    if a.txn is not None:
+        res["mark_matches"] = res["present"] and res.get("mark") == a.txn
+        if not res["mark_matches"]:
+            res["ok"] = False
+            out(res)
+            return EXIT_ERR
+    out(res)
+    return 0
+
+
+@refusing
+def cmd_ticket_extend(a) -> int:
+    """Move the deadline of the ticket on the new instance to now + DUR (on the instance's clock), under the lock its
+    loop decides under: so that taking the instance over is not cut short."""
+    secs = parse_duration_s(a.deadline)
+    if secs < 60:
+        raise ValueError("--deadline: at least a minute")
+    rec = ticket_record(a.txn)
+    _ticket_on(rec, "new", a.alias)
+    rc, kv, said = ticket_remote(a.alias, ticket_extend_script(a.txn, secs))
+    if rc != 0:
+        return _ticket_fail(rc, kv, said, txn=a.txn)
+    d, g = kv.get("deadline", ""), kv.get("grace", "")
+    want = (hashlib.sha256(ticket_text(a.txn, kv.get("source", ""), kv.get("hosts", "").split(), d, g).encode()).hexdigest()
+            if d.isdigit() else None)
+    if want is None or kv.get("sha256") != want:
+        return _ticket_fail(EXIT_ERR, kv, "the ticket does not read back as expected after the change", txn=a.txn)
+    out({"ok": True, "txn": a.txn, "deadline": int(d), "copy": ticket_note(a.txn, ticket_deadline=int(d))})
+    return 0
+
+
+@refusing
+def cmd_ticket_start(a) -> int:
+    """Start the ticket's loop on the new instance when it is not running (design 5.6 step 5)."""
+    rec = ticket_record(a.txn)
+    _ticket_on(rec, "new", a.alias)
+    rc, kv, said = ticket_remote(a.alias, ticket_start_script(a.txn))
+    if rc != 0:
+        return _ticket_fail(rc, kv, said, txn=a.txn)
+    out({"ok": True, "txn": a.txn, "loop": kv.get("loop") == "1", "started": kv.get("started") == "1"})
+    return 0
+
+
+@refusing
+def cmd_ticket_clear(a) -> int:
+    """Take the ticket away. On the new instance: only with the guard armed by an arm of this boot and alive, and the
+    loop is then seen to leave (exit 6 when it is not; exit 4 when it has issued the shutdown already). With --source,
+    on the source, where the ticket does nothing: after checking that it is that clone's ticket and that instance."""
+    rec = ticket_record(a.txn, closed_ok=True)
+    _ticket_on(rec, "source" if a.source else "new", a.alias)
+    rc, kv, said = ticket_remote(a.alias, ticket_clear_script(a.txn, a.source), timeout=2 * TICKET["period"] + 100)
+    if rc != 0:
+        return _ticket_fail(rc, kv, said, txn=a.txn)
+    note = ticket_note(a.txn, **({"source_ticket": "cleared"} if a.source else {"clone_ticket": "cleared"}))
+    out({"ok": True, "txn": a.txn, "removed": kv.get("removed") == "1", "copy": note,
+         **({} if a.source else {"handoff": kv.get("handoff")})})
+    return 0
+
+
+# ---- the data disk's manifest, the spec, a job's request (plan task 11.7; design 5.2, 5.7) ----
+DATA_DIR = "/root/autodl-tmp"       # AutoDL's data disk
+CGROUP_DIR = "/sys/fs/cgroup"
+COPY_BYTES_S = 50_000_000           # the copy speed a clone is estimated with: half of what the platform states
+
+
+def manifest_script(content: bool) -> str:
+    """Remote, read-only: every entry of the data disk with its type, size, modification time and path (and a link's
+    target), NUL-separated so that no file name can break a record, gzipped; with CONTENT also every file's SHA-256.
+    Left out is what changes with every start or while the instance is on: the guard's state, log, script and
+    temporary files, and the platform's own folder (.autodl). Refused (3) while a registered job runs, or when the
+    guard cannot say. Each part ends with a mark, so a listing that broke off is told from a whole one."""
+    q = shlex.quote
+    g = posixpath.relpath(GUARD_HOME, DATA_DIR)
+    prune = " -o ".join("-path " + q(p) for p in (
+        "./.autodl", f"./{g}/state2", f"./{g}/guard.log", f"./{g}/autodl_guard.sh", f"./{g}/.deploy-*", f"./{g}/.cmd.*"))
+    body = (f"find . -xdev \\( {prune} \\) -prune -o \\( -type l -printf 'l\\t%s\\t%T@\\t%P\\0%l\\0' \\) "
+            "-o -printf '%y\\t%s\\t%T@\\t%P\\0' && printf 'LISTED\\0'")
+    if content:
+        body += (f" && find . -xdev \\( {prune} \\) -prune -o -type f -print0 | xargs -0 -r sha256sum -z "
+                 "&& printf 'HASHED\\0'")
+    return f"""set -o pipefail
+cd {q(DATA_DIR)} 2> /dev/null || {{ echo "error: no data disk at {DATA_DIR}" >&2; exit 1; }}
+st="$(bash {q(GUARD_PATH)} status 2> /dev/null)" || {{ echo "error: the guard's status cannot be read, so whether a job is running cannot be told: no manifest (deploy and arm first)" >&2; exit 3; }}
+busy="$(printf '%s\\n' "$st" | grep '^job\\..*=running|' | cut -d'|' -f1)"
+if [ -n "$busy" ]; then echo "error: a registered job is running, so the disk is changing: no manifest ($(echo $busy))" >&2; exit 3; fi
+echo "system_bytes=$(df -B1 --output=size / | tail -n 1 | tr -d ' ')"
+echo "data_bytes=$(df -B1 --output=size . | tail -n 1 | tr -d ' ')"
+echo MANIFEST
+{{ {body}; }} | gzip -1c
+"""
+
+
+def manifest_entries(blob: bytes, content: bool) -> list:
+    """The listing as entries [type, size, mtime, path, link target or None, SHA-256 or None], sorted by path.
+    ValueError when it is not whole."""
+    recs = blob.split(b"\0")
+    entries, i, listed = [], 0, False
+    while i < len(recs):
+        r = recs[i]
+        i += 1
+        if r == b"LISTED":
+            listed = True
+            break
+        parts = r.split(b"\t", 3)
+        if len(parts) != 4:
+            raise ValueError("the listing is incomplete (a record is out of shape)")
+        kind, size, mtime, path = parts
+        target = None
+        if kind == b"l":
+            if i >= len(recs):
+                raise ValueError("the listing is incomplete (a link without its target)")
+            target = recs[i].decode("utf-8", "surrogateescape")
+            i += 1
+        if path:   # the data disk's own directory has no path of its own
+            entries.append([kind.decode("ascii", "replace"), int(size), int(float(mtime)),
+                            path.decode("utf-8", "surrogateescape"), target, None])
+    if not listed:
+        raise ValueError("the listing is incomplete (it does not end with its closing mark)")
+    if content:
+        hashes, done = {}, False
+        while i < len(recs):
+            r = recs[i]
+            i += 1
+            if r == b"HASHED":
+                done = True
+                break
+            h, sep, p = r.partition(b"  ")
+            if not sep or len(h) != 64:
+                raise ValueError("the contents' digests are incomplete (a record is out of shape)")
+            hashes[(p[2:] if p.startswith(b"./") else p).decode("utf-8", "surrogateescape")] = h.decode("ascii", "replace")
+        if not done:
+            raise ValueError("the contents' digests are incomplete (they do not end with their closing mark)")
+        for e in entries:
+            if e[0] == "f":
+                if e[3] not in hashes:
+                    raise ValueError(f"the contents' digests are incomplete (none for {e[3]!r})")
+                e[5] = hashes[e[3]]
+    entries.sort(key=lambda e: e[3].encode("utf-8", "surrogateescape"))
+    return entries
+
+
+def manifest_summary(entries: list) -> dict:
+    """Counts, the files' total size, and the digest of what a copy must reproduce: every entry's type and path, a
+    file's size (and content digest when taken), a link's target. Not the times, and not a directory's own size."""
+    h = hashlib.sha256()
+    for e in sorted(entries, key=lambda e: e[3].encode("utf-8", "surrogateescape")):
+        h.update((json.dumps([e[0], e[1] if e[0] == "f" else 0, e[3], e[4], e[5]], ensure_ascii=True) + "\n").encode())
+    total = sum(e[1] for e in entries if e[0] == "f")
+    est = -(-total // COPY_BYTES_S)
+    return {"files": sum(e[0] == "f" for e in entries), "dirs": sum(e[0] == "d" for e in entries),
+            "links": sum(e[0] == "l" for e in entries), "others": sum(e[0] not in "fdl" for e in entries),
+            "bytes": total, "sha256": h.hexdigest(), "copy_estimate_s": est, "ticket_deadline": f"{1800 + 2 * est}s"}
+
+
+def manifest_compare(old: dict, new: dict, changed_after: int | None) -> dict:
+    """NEW (this instance, now) against OLD (the manifest file given): what differs, at most 20 listed. CHANGED_AFTER
+    says that NEW has been in use since that time (a job began then), and two kinds of NEW's entries are then set apart,
+    not compared: what OLD has not at all (made here since, or moved to another name; never a loss of what OLD had), and
+    what was modified at or after that time. A directory of both is no difference whatever its time, which moves with
+    every file written into it. What OLD has and NEW has not stays a difference: nothing tells a file the job removed
+    from one that was never copied. Of what was set apart, changed_since counts the entries OLD has too: their copies
+    can no longer be checked, so "the same" then holds for the rest only."""
+    if old["content"] != new["content"]:
+        raise ValueError("one manifest has the contents' digests and the other has not: compare like with like")
+    o, n = {e[3]: e for e in old["entries"]}, {e[3]: e for e in new["entries"]}
+    order = lambda p: p.encode("utf-8", "surrogateescape")   # noqa: E731
+    skip = set() if changed_after is None else {
+        p for p, e in n.items()
+        if p not in o or (e[2] >= changed_after and not (e[0] == "d" and o[p][0] == "d"))}
+    diffs = []
+    for p in sorted(set(o) | set(n), key=order):
+        if p in skip:
+            continue
+        a, b = o.get(p), n.get(p)
+        if b is None:
+            what = "missing here"
+        elif a is None:
+            what = "only here"
+        elif a[0] != b[0]:
+            what = f"another type: {a[0]} there, {b[0]} here"
+        elif a[0] == "f" and a[1] != b[1]:
+            what = f"another size: {a[1]} there, {b[1]} here"
+        elif a[0] == "l" and a[4] != b[4]:
+            what = "another link target"
+        elif a[0] == "f" and a[5] != b[5]:
+            what = "another content: the same size, another SHA-256"
+        else:
+            continue
+        diffs.append({"path": p, "what": what})
+    both = sorted((p for p in skip if p in o), key=order)
+    res = {"same": not diffs, "different": len(diffs), "differences": diffs[:20], "not_compared": len(skip),
+           "changed_since": len(both)}
+    if skip:
+        res["not_compared_first"] = sorted(skip, key=order)[:20]
+    if both:
+        res["changed_since_first"] = both[:20]
+    return res
+
+
+def load_manifest(path: str) -> dict:
+    m = json.loads(gzip.decompress(pathlib.Path(normalize_local(path)).read_bytes()).decode("utf-8"))
+    if not isinstance(m, dict) or m.get("v") != 1 or not isinstance(m.get("entries"), list) or "content" not in m:
+        raise ValueError(f"{path} is not a manifest that ctl manifest wrote")
+    return m
+
+
+def cmd_manifest(a) -> int:
+    """The data disk's manifest (design 5.2), written into the project's .autodl folder; with --compare, also how it
+    differs from an earlier one (exit 1 when it does). Read-only on the instance."""
+    limit = parse_duration_s(a.timeout) if a.timeout else (1800 if a.content else 300)
+    if a.changed_after is not None and a.compare is None:
+        raise ValueError("--changed-after goes with --compare")
+    other = load_manifest(a.compare) if a.compare else None
+    r = ssh_run(a.alias, manifest_script(a.content), timeout=limit)
+    fail = {"ok": False, "instance": BOUND}
+    if r.state == "not_run":
+        out({**fail, "error": f"ssh did not get through ({r.attempts} attempts): {log_tail(r.log)}"})
+        return EXIT_UNREACHABLE
+    if r.rc == -1:
+        out({**fail, "error": f"the manifest was not finished in time ({limit}s): there is none; a longer --timeout may do"})
+        return EXIT_ERR
+    said = " ".join(text(r.stderr).split())
+    if r.rc == 3:
+        out({**fail, "error": said})
+        return EXIT_REFUSED
+    head, sep, blob = (r.stdout or b"").partition(b"MANIFEST\n")
+    try:
+        if not sep:
+            raise ValueError(said or "the instance sent no listing")
+        entries = manifest_entries(gzip.decompress(blob), a.content)
+        if r.rc != 0:
+            raise ValueError(said or f"the listing ended with status {r.rc}")
+    except (ValueError, OSError, EOFError, zlib.error) as e:
+        out({**fail, "error": f"the manifest is incomplete, so there is none: {e}"})
+        return EXIT_ERR
+    kv = dict(line.split("=", 1) for line in text(head).splitlines() if "=" in line)
+    now = now_s()
+    m = {"v": 1, "instance": BOUND, "at": now, "root": DATA_DIR, "content": bool(a.content),
+         "system_bytes": int(kv["system_bytes"]) if kv.get("system_bytes", "").isdigit() else None,
+         "data_bytes": int(kv["data_bytes"]) if kv.get("data_bytes", "").isdigit() else None,
+         **manifest_summary(entries), "entries": entries}
+    path = (pathlib.Path(normalize_local(a.out)) if a.out else
+            pathlib.Path(normalize_local(a.project)).resolve() / ".autodl" / f"manifest-{BOUND}-{now}.json.gz")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip.compress(json.dumps(m, ensure_ascii=True).encode("ascii"), mtime=0))
+    res = {"ok": True, "manifest": str(path), **{k: v for k, v in m.items() if k not in ("v", "entries")}}
+    if other is not None:
+        res.update(manifest_compare(other, m, a.changed_after), compared_with=str(a.compare))
+    out(res)
+    return 0 if other is None or res["same"] else EXIT_ERR
+
+
+def spec_script() -> str:
+    q = shlex.quote
+    return (_nvsmi_limit(10) + '$t nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2> /dev/null '
+            '| sed "s/^/gpu=/"; '
+            f'echo "cpu.max=$(cat {q(CGROUP_DIR)}/cpu.max 2> /dev/null)"; '
+            f'echo "memory.max=$(cat {q(CGROUP_DIR)}/memory.max 2> /dev/null)"; '
+            "echo \"system_bytes=$(df -B1 --output=size / 2> /dev/null | tail -n 1 | tr -d ' ')\"; "
+            f"echo \"data_bytes=$(df -B1 --output=size {q(DATA_DIR)} 2> /dev/null | tail -n 1 | tr -d ' ')\"")
+
+
+def cmd_spec(a) -> int:
+    """What the instance is, read on it (design 5.7 step 2): GPU model, count and driver, the CPU quota as cores, the
+    memory limit, the sizes of both disks. With expectations (what the create page showed for the chosen host) it
+    says where they differ, exit 1. In non-GPU mode the quotas are the non-GPU ones: compare after a GPU power-on."""
+    r = ssh_run(a.alias, spec_script(), retry_uncertain=True)
+    if r.rc != 0:
+        out({"ok": False, "error": "the spec could not be read", "ssh_said": log_tail(r.log), "stderr": text(r.stderr)[-400:]})
+        return EXIT_UNREACHABLE if r.state == "not_run" else EXIT_UNCERTAIN if r.state == "uncertain" or r.rc == 255 else EXIT_ERR
+    gpus, kv = [], {}
+    for line in text(r.stdout).splitlines():
+        k, sep, v = line.partition("=")
+        if sep and k == "gpu":
+            name, _, drv = v.rpartition(",")
+            gpus.append((name.strip(), drv.strip()))
+        elif sep:
+            kv[k] = v.strip()
+    names, drivers = sorted({g[0] for g in gpus}), sorted({g[1] for g in gpus})
+    quota = kv.get("cpu.max", "").split()
+    cores = (int(quota[0]) / int(quota[1]) if len(quota) == 2 and quota[0].isdigit() and quota[1].isdigit() and int(quota[1])
+             else None)
+    num = lambda k: int(kv[k]) if kv.get(k, "").isdigit() else None   # noqa: E731
+    res = {"ok": True, "gpus": len(gpus), "gpu_model": names[0] if len(names) == 1 else None, "gpu_models": names,
+           "driver": drivers[0] if len(drivers) == 1 else None,
+           "cpu_cores": int(cores) if cores is not None and cores == int(cores) else cores,
+           "memory_bytes": num("memory.max"), "system_bytes": num("system_bytes"), "data_bytes": num("data_bytes")}
+    wants = [a.gpu_model, a.gpus, a.driver, a.cpu_per_gpu, a.mem_per_gpu_gb, a.min_system_bytes, a.min_data_bytes]
+    if all(w is None for w in wants):
+        out(res)
+        return 0
+    # per-GPU figures are scaled by the GPUs the instance has (by the expected count only when it has none), so that
+    # a wrong count shows as one difference and not as three
+    n = len(gpus) or a.gpus or 0
+    squash = lambda s: " ".join(s.lower().split())   # noqa: E731
+    diff = []
+    if a.gpu_model is not None and not (gpus and all(squash(a.gpu_model) in squash(g[0]) for g in gpus)):
+        diff.append(f"gpu-model: expected {a.gpu_model}, the instance has {', '.join(names) or 'no GPU'}")
+    if a.gpus is not None and len(gpus) != a.gpus:
+        diff.append(f"gpus: expected {a.gpus}, the instance has {len(gpus)}")
+    if a.driver is not None and res["driver"] != a.driver:
+        diff.append(f"driver: expected {a.driver}, the instance has {', '.join(drivers) or 'none'}")
+    if a.cpu_per_gpu is not None and cores != a.cpu_per_gpu * n:
+        diff.append(f"cpu: expected {a.cpu_per_gpu} cores per GPU ({a.cpu_per_gpu * n}), the quota is {res['cpu_cores']}")
+    if a.mem_per_gpu_gb is not None:
+        want_b = a.mem_per_gpu_gb * n * 2 ** 30
+        if res["memory_bytes"] is None or abs(res["memory_bytes"] - want_b) * 100 > want_b:
+            diff.append(f"mem: expected {a.mem_per_gpu_gb} GB per GPU ({want_b} bytes), the limit is {res['memory_bytes']}")
+    for name, want_b, key in (("system", a.min_system_bytes, "system_bytes"), ("data", a.min_data_bytes, "data_bytes")):
+        if want_b is not None and (res[key] is None or res[key] < want_b):
+            diff.append(f"{name}: the {name} disk has {res[key]} bytes, at least {want_b} expected")
+    res.update(match=not diff, diff=diff)
+    out(res)
+    return 0 if not diff else EXIT_ERR
+
+
+def job_script(name: str, req: str) -> str:
+    """Remote, read-only: the records of the job NAME (the current one and the archived ones) that carry the request
+    REQ, with what tells whether its command was started; this boot's marker, read as the guard reads it; and the
+    guard's own word on the job."""
+    q = shlex.quote
+    return f"""J={q(GUARD_HOME + "/jobs")}; N={q(name)}; Q={q(req)}
+b=unknown
+{{ IFS= read -r -d '' line < /proc/1/stat; }} 2> /dev/null
+case "$line" in *") "*) set -- ${{line##*) }}; [ $# -ge 20 ] && b="${{20}}" ;; esac
+echo "boot=$b"
+has() {{ if [ -e "$1" ]; then echo 1; else echo 0; fi; }}
+for d in "$J/$N" "$J/$N".prev-*; do
+  [ -d "$d" ] || continue
+  if [ "$(cat "$d/req" 2> /dev/null)" = "$Q" ]; then p=0
+  elif [ "$(cat "$d/req.pending" 2> /dev/null)" = "$Q" ]; then p=1
+  else continue; fi
+  echo "match=${{d##*/}}|$p|$(cat "$d/boot" 2> /dev/null)|$(has "$d/running")|$(has "$d/spawning")|$(has "$d/end")|$(cat "$d/rc" 2> /dev/null)"
+done
+bash {q(GUARD_PATH)} status 2> /dev/null | grep "^job\\.$N=" | head -n 1
+"""
+
+
+def job_state(alias: str, name: str, req: str) -> tuple:
+    """(exit code, answer): was the job NAME ever started by the request REQ, in this boot or an earlier one? The
+    guard itself knows a request within one boot only, and would start it again after a restart."""
+    r = ssh_run(alias, job_script(name, req), retry_uncertain=True)
+    if r.rc != 0:
+        rc = EXIT_UNREACHABLE if r.state == "not_run" else EXIT_UNCERTAIN if r.state == "uncertain" or r.rc == 255 else EXIT_ERR
+        return rc, {"ok": False, "job": name, "req": req, "error": "the job's records could not be read",
+                    "ssh_said": log_tail(r.log), "stderr": text(r.stderr)[-400:]}
+    boot, guard_says, seen = "unknown", None, []
+    for line in text(r.stdout).splitlines():
+        k, sep, v = line.partition("=")
+        if k == "boot" and sep:
+            boot = v.strip()
+        elif k == "match" and sep:
+            f = (v.split("|") + [""] * 7)[:7]
+            seen.append({"where": f[0], "pending": f[1] == "1", "boot": f[2], "running": f[3] == "1", "spawning": f[4] == "1",
+                         "end": f[5] == "1", "rc": f[6]})
+        elif k == f"job.{name}" and sep:
+            guard_says = v.split("|")[0]
+    res = {"ok": True, "job": name, "req": req, "boot": boot, "started": False, "starting": False}
+    unsure = False
+    for m in seen:
+        here = boot != "unknown" and m["boot"] == boot and m["where"] == name
+        if m["running"] or (m["end"] and m["spawning"]) or not m["pending"]:
+            state = ("ended" if m["end"] else guard_says if here and guard_says else "lost")
+            res.update(started=True, state=state, where=m["where"], this_boot=boot != "unknown" and m["boot"] == boot)
+            if m["end"]:
+                res["rc"] = m["rc"]
+            return 0, res
+        if here:
+            res["starting"] = True   # registered in this boot and not confirmed yet: the guard goes on with it
+        elif m["spawning"]:
+            unsure = True            # an earlier boot ended while it was being started
+    if unsure and not res["starting"]:
+        res.update(started=None, note="an earlier boot ended while this request was starting the job: whether its command "
+                                      "ran cannot be told. Look at the job's log, then tell the user")
+        return EXIT_UNCERTAIN, res
+    return 0, res
+
+
+def cmd_job(a) -> int:
+    """Read-only: whether the request REQ ever started the job NAME on this instance, and how it stands."""
+    if not JOB_RE.match(a.name) or a.name == "guard":
+        raise ValueError(f"bad job name {a.name!r}")
+    if not REQ_RE.match(a.req or ""):
+        raise ValueError(f"--req {a.req!r}: the request ID the run was (or is to be) given, 16 hex digits")
+    rc, res = job_state(a.alias, a.name, a.req)
+    out(res)
+    return rc
 
 
 # ---- status, check, wait, deploy ----
@@ -2364,7 +4033,17 @@ def cmd_run(a) -> int:
     # the guard refuse a command that arrived incomplete
     if a.quiet:
         parse_duration_s(a.quiet)
-    args = ["run", a.name, "--req", secrets.token_hex(8), "--cmd-sha256", hashlib.sha256(data).hexdigest(),
+    if a.req is not None:
+        # A request ID of the caller's own (kept in a clone record, say) must start the job once however often it is
+        # sent, in whichever boot. The guard knows a request within one boot only, so ctl asks first: started before,
+        # nothing is sent; it cannot be told, nothing is sent either
+        if not REQ_RE.match(a.req):
+            raise ValueError(f"--req {a.req!r}: 16 hex digits")
+        rc, seen = job_state(a.alias, a.name, a.req)
+        if rc != 0 or seen["started"]:
+            out({**seen, **({"already": True} if seen.get("started") else {})})
+            return rc
+    args = ["run", a.name, "--req", a.req or secrets.token_hex(8), "--cmd-sha256", hashlib.sha256(data).hexdigest(),
             "--cmd-stdin"]
     if a.then_off:
         args.append("--then-off")
@@ -3018,9 +4697,8 @@ def usage_of_instance(name: str) -> int:
     for s in session_list(recs):
         span = (now if s["off"] is None else s["off"]) - s["on"]
         secs[s["mode"]] += span * s["gpus"] if s["mode"] == "gpu" else span
-    a_, b_ = _estimate_and_charged(recs, 0, 2 ** 62, now)
     res = {"instance": iid, "gpu_hours": round(secs["gpu"] / 3600, 3), "nogpu_hours": round(secs["nogpu"] / 3600, 3),
-           "est_cost_yuan": fen_to_yuan(max(a_, b_)),
+           "est_cost_yuan": fen_to_yuan(_estimate_and_charged(recs, 0, 2 ** 62, now)),
            "charged_yuan": fen_to_yuan(sum(r["fen"] for r in recs if r["kind"] == "charge")),
            "open_reservations": [r["req"] for r in open_reservations(recs)]}
     op = _open_session(recs)
@@ -3127,6 +4805,33 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--then-off", action="store_true")
     s.add_argument("--quiet", help="the job counts as in use for this long from its start, e.g. 2h")
     s.add_argument("--log")
+    s.add_argument("--req", help="a request ID of your own (16 hex digits) instead of a fresh one: this request starts "
+                                 "the job once, however often it is sent and in whichever boot (ctl asks first)")
+
+    s = add("job", cmd_job, "whether a request ever started the job NAME on this instance, and how it stands (read-only)")
+    s.add_argument("name")
+    s.add_argument("--req", required=True, help="the request ID the run was given")
+
+    s = add("manifest", cmd_manifest, "the data disk's manifest (paths and sizes; with --content every file's SHA-256), "
+                                      "kept in the project's .autodl folder; read-only on the instance")
+    s.add_argument("--content", action="store_true", help="also the SHA-256 of every file's content (slow)")
+    s.add_argument("--compare", metavar="FILE", help="a manifest written earlier: say how this one differs (exit 1 if so)")
+    s.add_argument("--changed-after", type=int, metavar="UNIX", help="with --compare: a job has run here since this time; "
+                                                                       "what is only here, and what was modified at or "
+                                                                       "after it, is counted apart and not compared")
+    s.add_argument("--project", default=".")
+    s.add_argument("--out", help="where to write it; default <project>/.autodl/manifest-<instance>-<time>.json.gz")
+    s.add_argument("--timeout", help="default 5m, with --content 30m; past it there is no manifest")
+
+    s = add("spec", cmd_spec, "GPU model, count and driver, CPU quota, memory limit, disk sizes (read-only); with "
+                              "expectations, where they differ (exit 1)")
+    s.add_argument("--gpu-model", help="the model as the create page names it (a part of the card's name)")
+    s.add_argument("--gpus", type=int)
+    s.add_argument("--driver")
+    s.add_argument("--cpu-per-gpu", type=int, help="CPU cores per GPU, as the host's row shows them")
+    s.add_argument("--mem-per-gpu-gb", type=int, help="memory per GPU in GB, as the host's row shows it")
+    s.add_argument("--min-system-bytes", type=int)
+    s.add_argument("--min-data-bytes", type=int)
 
     s = add("quiet", cmd_quiet, "the running job NAME counts as in use for DUR from now")
     s.add_argument("name")
@@ -3210,6 +4915,24 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--instance")
     g.add_argument("--booted-at", type=int, help="with --instance, the booted_at of ctl status: also say whether "
                                                  "the power-on of this boot is in the ledger (this_boot)")
+    g = asub.add_parser("clone", help="whether to clone the instance when its host has no free GPU, and how")
+    g.set_defaults(func=cmd_auth_clone)
+    g.add_argument("--instance", required=True)
+    g.add_argument("--enable", action="store_true", help="clone when no GPU came free within --wait; starts the task anew")
+    g.add_argument("--disable", action="store_true", help="never clone by itself; what was chosen before is kept")
+    g.add_argument("--wait", help="how long to wait for a free GPU first, e.g. 30m (the default); a minute to 24h")
+    g.add_argument("--max", type=int, help="clones in this task at most (default 1)")
+    g.add_argument("--after", choices=list(CLONE_AFTER), help="the original once the clone has taken over: remind the "
+                                                                "user to release it (default), or leave it")
+    g.add_argument("--quote", required=True, help="the user's own words")
+    g.add_argument("--said", help="what the user was told when asked (daily fees of an expanded disk on both instances; "
+                                  "not to clone the instance by hand meanwhile)")
+    g = asub.add_parser("daily", help="the daily fee of an instance's expanded data disk, so that a money budget counts it")
+    g.set_defaults(func=cmd_auth_daily)
+    g.add_argument("--instance", required=True)
+    g.add_argument("--fee", required=True, help="yuan a day, as the console shows it (e.g. 0.03); 0 ends it")
+    g.add_argument("--from", dest="since", type=int, help="the unix time it counts from; default: the start of the "
+                                                          "instance's current budget period")
     g = asub.add_parser("clock", help="after the user confirmed this clock is right: lower last_seen to now")
     g.set_defaults(func=cmd_auth_clock)
     g.add_argument("--quote", required=True, help="the user's own words")
@@ -3234,10 +4957,30 @@ def build_parser() -> argparse.ArgumentParser:
                                                          "deadline), with --hours from now to the new expected end. "
                                                          "Refused (exit 1) while the ledger has no open session for "
                                                          "the instance: record its boot first")
+    g.add_argument("--clone-host", help="the reservation is for a clone of the instance on this host (its ID): needs "
+                                        "the clone record at reserve, with this host among its allowed ones")
+    g.add_argument("--daily", help="with --clone-host: the daily fee (yuan) of the new instance's expanded data disk, "
+                                   "as the create page shows it; it counts from now on while the reservation is open")
+    g.add_argument("--clone-prep", action="store_true",
+                   help="with --mode nogpu: a short start of the source that prepares or closes a clone; allowed under "
+                        "a grant for GPU use only while cloning is enabled and a clone is under way")
     g = asub.add_parser("release", help="drop a reservation whose power-on did not happen")
     g.set_defaults(func=cmd_auth_release)
     g.add_argument("--instance", required=True)
     g.add_argument("--req", required=True)
+    g = asub.add_parser("inherit", help="a clone's new instance takes over the source's grant, reservation and budget")
+    g.set_defaults(func=cmd_auth_inherit)
+    g.add_argument("--from", dest="src", required=True, help="the source instance")
+    g.add_argument("--to", required=True, help="the new instance (on the host the reservation was made for)")
+    g.add_argument("--req", required=True, help="the request ID of the clone's reservation")
+    g.add_argument("--daily", help="the daily fee the reservation was made with (yuan), when it has one")
+    # dest is not "alias": a command whose namespace has an alias is bound to an instance and connects (main)
+    g.add_argument("--alias", dest="new_alias", help="the new instance's alias, shown only; default: the source's")
+    g = asub.add_parser("released", help="the user released an instance and the console no longer shows it: its daily "
+                                              "fee ends, its grant goes")
+    g.set_defaults(func=cmd_auth_released)
+    g.add_argument("--instance", required=True)
+    g.add_argument("--at", type=int, required=True, help="the unix time it was found released")
     g = asub.add_parser("charges", help="import charge rows from the console's billing detail (a JSON list; [] when it "
                                              "shows none for this period)")
     g.set_defaults(func=cmd_auth_charges)
@@ -3245,6 +4988,57 @@ def build_parser() -> argparse.ArgumentParser:
     src = g.add_mutually_exclusive_group(required=True)
     src.add_argument("--json", help='[{"serial": ..., "instance": ..., "time": ..., "amount": ...}, ...]')
     src.add_argument("--file")
+
+    s = add("clone-record", None, "the record of a clone in progress: what was done so far, kept in the local record",
+            alias=False)
+    rsub = s.add_subparsers(dest="rec_cmd", required=True)
+    g = rsub.add_parser("open", help="before anything is touched: open the record and get its transaction ID")
+    g.set_defaults(func=cmd_clone_open)
+    g.add_argument("--instance", required=True, help="the instance to be cloned")
+    g.add_argument("--project", default=".", help="the project whose task this is; a copy of the record is kept there")
+    g.add_argument("--hosts", required=True, help="the hosts found suitable on the create page, by ID, comma-separated")
+    g = rsub.add_parser("update", help="set fields and move one stage on; the stage is written before its action")
+    g.set_defaults(func=cmd_clone_update)
+    g.add_argument("--txn", required=True, help="the transaction ID that open gave")
+    g.add_argument("--stage", help="one of: " + ", ".join(CLONE_STAGES))
+    g.add_argument("--set", action="append", metavar="KEY=VALUE",
+                   help="host, gpus, price, expand-gb, daily, req, t0, before (at reserve); hosts (up to ticket); answer, "
+                        "created, instance, emergency-timer (after the click); job, job-req (once taken over); note")
+    g = rsub.add_parser("show", help="the open clone records; with --project, also bring the project's copy in line")
+    g.set_defaults(func=cmd_clone_show)
+    g.add_argument("--txn")
+    g.add_argument("--instance", help="only the clones of this instance's budget group")
+    g.add_argument("--all", action="store_true", help="the closed ones too")
+    g.add_argument("--project")
+    g = rsub.add_parser("close", help="the clone is over: nothing of it is left to clean up")
+    g.set_defaults(func=cmd_clone_close)
+    g.add_argument("--txn", required=True)
+    g.add_argument("--note", help="what becomes of the two instances, when the task did not move to the new one")
+
+    s = add("ticket", None, "the clone ticket: a file a clone carries, which shuts it down when nobody takes it over",
+            alias=False)
+    tsub = s.add_subparsers(dest="ticket_cmd", required=True)
+
+    def tadd(name, func, help_text, txn=True):
+        g = tsub.add_parser(name, help=help_text)
+        g.set_defaults(func=func)
+        g.add_argument("alias", help="Host alias from ~/.ssh/config")
+        g.add_argument("--instance", help="the instance ALIAS must lead to; default: the one it was verified for")
+        g.add_argument("--txn", required=txn, help="the clone's transaction ID (the mark on its ticket)")
+        return g
+
+    g = tadd("write", cmd_ticket_write, "on the source, before the clone: put the ticket there and read it back")
+    g.add_argument("--hosts", required=True, help="the hosts the clone may be on, as in the clone record")
+    g.add_argument("--deadline", required=True, help="how long from now a clone may stay untaken, e.g. 45m: 30 minutes "
+                                                     "plus twice the estimated copy time (ctl manifest gives it)")
+    g.add_argument("--grace", default="15m", help="what every boot of a clone gets at least (default 15m)")
+    tadd("read", cmd_ticket_read, "the ticket on this instance, and whether its loop runs (read-only)", txn=False)
+    g = tadd("extend", cmd_ticket_extend, "on the new instance: move the ticket's deadline to now + DUR")
+    g.add_argument("--deadline", required=True)
+    tadd("start", cmd_ticket_start, "on the new instance: start the ticket's loop when it is not running")
+    g = tadd("clear", cmd_ticket_clear, "take the ticket away: on the new instance once the guard is armed, on the source "
+                                        "with --source")
+    g.add_argument("--source", action="store_true", help="on the clone's source, where the ticket does nothing")
 
     add("now", cmd_now, "print the current unix time (for T0)", alias=False)
     add("version", cmd_version, "print the version of this helper", alias=False)
