@@ -116,10 +116,11 @@ window.__ccon = (function () {
      [HTMLInputElement, ['formAction']], [HTMLButtonElement, ['formAction']], [HTMLObjectElement, ['data']],
      [HTMLEmbedElement, ['src']], [HTMLTextAreaElement, ['value']], [HTMLSelectElement, ['value']]]
       .forEach(function (pair) { pair[1].forEach(function (n) { accessor(pair[0].prototype, n, pair[0].name + '.' + n); }); });
-    // The other effects the script may have: click a button or the label of a checkbox, of a radio button or of a
-    // radio, and focus an input without scrolling (and send it a focus event once it is the active element). Anything
-    // else through these entries is a hit. Each effect let through is logged with its element, and attempt() compares
-    // the log with the effects the call should have had.
+    // The other effects the script may have: click a button, the label of a checkbox or of a radio button, or the
+    // circle of a host's radio (not the radio's label: on the console most of it lies under the next column), and
+    // focus an input without scrolling (and send it a focus event once it is the active element). Anything else
+    // through these entries is a hit. Each effect let through is logged with its element, and attempt() compares the
+    // log with the effects the call should have had.
     function only(obj, name, label, allow, kind) {
       try {
         var own = Object.getOwnPropertyDescriptor(obj, name);
@@ -133,9 +134,11 @@ window.__ccon = (function () {
         undo.push(function () { if (own) Object.defineProperty(obj, name, own); else delete obj[name]; });
       } catch (e) { hits.push('could not trap ' + label); }
     }
-    only(HTMLElement.prototype, 'click', 'click on something other than a button or the label of a box or radio', function (el) {
-      return el.tagName === 'BUTTON' || (el.tagName === 'LABEL' && (el.classList.contains('el-checkbox') ||
-             el.classList.contains('el-radio-button') || el.classList.contains('el-radio')));
+    only(HTMLElement.prototype, 'click', 'click on something other than a button, the label of a box or the circle of a radio', function (el) {
+      return el.tagName === 'BUTTON' ||
+             (el.tagName === 'LABEL' && (el.classList.contains('el-checkbox') || el.classList.contains('el-radio-button'))) ||
+             (el.tagName === 'SPAN' && el.classList.contains('el-radio__input') && !!el.parentElement &&
+              el.parentElement.matches('.machine-table .el-table__body-wrapper label.el-radio'));
     }, function () { return 'click'; });
     only(HTMLElement.prototype, 'focus', 'focus on something other than an input, or without preventScroll', function (el, a) {
       return el.tagName === 'INPUT' && !!a[0] && a[0].preventScroll === true;
@@ -255,9 +258,9 @@ window.__ccon = (function () {
   function reads() {
     __cfx.mount();
     var api = newApi();
-    eq('version', String(api && api.version), '1');
+    eq('version', String(api && api.version), '3');
     eq('the script registers itself', pick(window.__autodlClone, ['brand', 'version', 'mode']),
-       JSON.stringify({ brand: 'autodl-gpu clone-page.js', version: 1, mode: 'offline-test' }));
+       JSON.stringify({ brand: 'autodl-gpu clone-page.js', version: 3, mode: 'offline-test' }));
     eq('the functions of the script, and no other', JSON.stringify(Object.keys(api)),
        JSON.stringify(['brand', 'version', 'mode', 'page', 'tickModel', 'pickCount', 'hosts', 'loadMoreHosts', 'pickHost', 'expansion',
                        'focusExpansion', 'prepareCreate', 'confirmCreate', 'result', 'leave']));
@@ -346,7 +349,7 @@ window.__ccon = (function () {
   // hosts reads every row loaded, says whether those are all, finds the source's own host and judges each host by the
   // rules of the design against it.
   var OWN = 'it is the host of the source instance';
-  var REASON = { model: 'another model or memory size', free: 'fewer free GPUs than needed', cpu: 'another CPU or memory per GPU',
+  var REASON = { model: 'another model or memory size', free: 'fewer free GPUs than needed', cpu: 'another number of CPU cores or memory per GPU',
                  driver: 'an older driver or a lower CUDA limit', price: 'a higher price', expand: 'too little room to expand the data disk',
                  radio: 'its radio is disabled' };
   function hostTable() {
@@ -379,16 +382,18 @@ window.__ccon = (function () {
       H('wxyz000009', '109机', 1, { price: '0.99' }), H('mnop000010', '110机', 1, { expand: 4 }), H('mnop000011', '111机', 1, { locked: true }),
       H('mnop000012', '112机', 2, { expand: 9000, price: '0.90' }), H('mnop000013', '113机', 2, { expand: 9500 }),
       H('mnop000014', '114机', 3, { driver: '590.1', cuda: '13.2' }), H('mnop000015', '115机', 1, { driver: '595..1' }),
-      H('mnop000016', '116机', 1, { driver: '590.1', cuda: '12.8' }), H('mnop000017', '117机', 1, { driver: '580.105.9' })] });
+      H('mnop000016', '116机', 1, { driver: '590.1', cuda: '12.8' }), H('mnop000017', '117机', 1, { driver: '580.105.9' }),
+      H('mnop000018', '118机', 4, { driver: '590.1', cuda: '13.2', cpuModel: 'Other(R) 2' })] });
     api = newApi();
     t = isOk('hosts with one host for each reason', call('hosts', function () { return api.hosts(SRC, 1, 5); }));
-    // a newer driver will do (it runs what the older one ran), an older one will not; the hosts with the very driver of
-    // the source's host come first whatever the others have free
-    eq('the suitable ones, the source\'s driver first, then most free GPUs, then most room', JSON.stringify(t.suitable),
-       JSON.stringify(['mnop000013', 'mnop000012', H1, 'mnop000014', 'mnop000017']));
+    // a newer driver will do (it runs what the older one ran), an older one will not; another CPU model will do as well
+    // (the cores and the memory per GPU must be the same). The hosts that have the very driver and CPU model of the
+    // source's host come first whatever the others have free, then those that differ in one of the two, then in both
+    eq('the suitable ones, the nearest to the source\'s host first, then most free GPUs, then most room', JSON.stringify(t.suitable),
+       JSON.stringify(['mnop000013', 'mnop000012', H1, 'mnop000014', 'wxyz000006', 'mnop000017', 'mnop000018']));
     eq('each reason', JSON.stringify(t.unsuitable), JSON.stringify([
       { host: 'abcd123456', why: OWN }, { host: 'wxyz000002', why: REASON.model }, { host: 'wxyz000003', why: REASON.free },
-      { host: 'wxyz000004', why: REASON.cpu }, { host: 'wxyz000005', why: REASON.cpu }, { host: 'wxyz000006', why: REASON.cpu },
+      { host: 'wxyz000004', why: REASON.cpu }, { host: 'wxyz000005', why: REASON.cpu },
       { host: 'wxyz000007', why: REASON.driver }, { host: 'wxyz000008', why: REASON.driver }, { host: 'wxyz000009', why: REASON.price },
       { host: 'mnop000010', why: REASON.expand }, { host: 'mnop000011', why: REASON.radio },
       { host: 'mnop000015', why: REASON.driver }, { host: 'mnop000016', why: REASON.driver }]));
@@ -418,7 +423,7 @@ window.__ccon = (function () {
     api = newApi();
     isRefused('hosts with a column renamed', call('hosts', function () { return api.hosts(SRC, 1, 5); }), /nine columns/);
     [['expand', '很多', /row 2.*硬盘/], ['free', '若干', /row 2.*空闲GPU/], ['price', '面议', /row 2.*价格/], ['vram', '不详', /row 2.*算力型号/],
-     ['label', 'DECOY-HOST', /row 2.*host/]].forEach(function (v) {
+     ['label', 'DECOY-HOST', /row 2.*host/], ['dot', false, /row 2.*host/]].forEach(function (v) {
       var hs = __cfx.defaultHosts();
       hs[2].lie = {};
       hs[2].lie[v[0]] = v[1];
@@ -464,6 +469,15 @@ window.__ccon = (function () {
   // when the row is not in view.
   function pickHosts() {
     var api = ready();
+    // As on the console, the first column shows only the circle of a radio: the middle of the radio's label, where the
+    // host ID would be, lies under the next column.
+    var lab = document.querySelector('.machine-table .el-table__body-wrapper tr.el-table__row label.el-radio');
+    var box = lab.getBoundingClientRect();
+    var mid = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    var dot = lab.querySelector('.el-radio__input').getBoundingClientRect();
+    var onDot = document.elementFromPoint(dot.left + dot.width / 2, dot.top + dot.height / 2);
+    check('the test page cuts the host ID off next to a radio, as the console does', !!mid && !lab.contains(mid) && lab.contains(onDot),
+          (mid ? mid.tagName : 'nothing') + ' / ' + (onDot ? onDot.tagName : 'nothing'));
     eq('pickHost of the host the page selected by itself', pick(call('pickHost(selected)', function () { return api.pickHost(SRC, H1); }),
        ['ok', 'already']), '{"ok":true,"already":true}');
     var r = isOk('pickHost of the next row', call('pickHost', function () { return api.pickHost(SRC, 'wxyz000002'); }));

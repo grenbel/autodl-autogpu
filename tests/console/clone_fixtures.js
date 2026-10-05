@@ -129,7 +129,8 @@ window.__cfx = (function () {
     return '<tr class="el-table__row' + (k % 2 ? ' el-table__row--striped' : '') + ' row-can-click">' +
       c(0, '<label class="el-radio' + (sel ? ' is-checked' : '') + (dis ? ' is-disabled' : '') + '" role="radio" aria-checked="' +
         (sel ? 'true' : 'false') + '"' + (dis ? ' aria-disabled="true"' : '') + ' tabindex="' + (sel ? '0' : '-1') + '">' +
-        '<span class="el-radio__input' + (sel ? ' is-checked' : '') + (dis ? ' is-disabled' : '') + '"><span class="el-radio__inner"></span>' +
+        '<span class="' + (lie.dot === false ? 'el-radio__circle' : 'el-radio__input') + (sel ? ' is-checked' : '') +
+        (dis ? ' is-disabled' : '') + '"><span class="el-radio__inner"></span>' +
         '<input class="el-radio__original" type="radio" aria-hidden="true" name=""' + (dis ? ' disabled' : '') + ' tabindex="-1" value="' +
         esc(x.id) + '"></span><span class="el-radio__label">' + esc(lie.label || x.id) + '</span></label>') +
       c(1, '<div><div class="machine-id-column"><span class="machineId">' + esc(x.alias) + '</span></div></div>') +
@@ -204,8 +205,11 @@ window.__cfx = (function () {
       'type="text" readonly autocomplete="off" placeholder="请选择"><span class="el-input__suffix"><i class="el-select__caret"></i></span>' +
       '</div></div></div></div></div></div><div class="pay-wrap">' + payHtml() + '</div></div>';
   }
+  // The first column of the host table is as narrow as the console's (30px) and cuts off what overflows: of a host's
+  // radio only the circle shows; the host ID after it is cut off, and the next column lies where it would be.
   var CSS = '<style>body{margin:0;font:11px/1.2 sans-serif}.card,.filter-item,.data-disk,.desc,.pay{margin:2px 4px}' +
     '.el-table td,.el-table th{padding:0 3px;white-space:nowrap}.table-box.fixed-height{position:relative;width:900px}' +
+    '.el-table__body td:first-child{padding:0}.el-table__body td:first-child .cell{width:10px;padding:0 10px;overflow:hidden}' +
     '.table-box.fixed-height .el-table__body-wrapper{height:100px;overflow-y:auto}' +
     '.el-loading-mask{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.6)}' +
     '.el-checkbox,.el-radio,.el-radio-button{display:inline-flex;align-items:center;margin-right:8px}' +
@@ -299,6 +303,11 @@ window.__cfx = (function () {
   // element that a handler has since taken out of the page, so it goes by what the element and its own ancestors are.
   function describe(el) {
     var t = norm(el.textContent);
+    // the circle of a host's radio goes by its host, as the radio's label does
+    if (el.tagName === 'SPAN' && el.classList.contains('el-radio__input') && el.parentElement &&
+        el.parentElement.classList.contains('el-radio')) {
+      return describe(el.parentElement);
+    }
     if (el.tagName === 'LABEL') {
       var i = el.querySelector('input');
       var v = i ? i.value : t;

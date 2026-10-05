@@ -208,6 +208,20 @@ def test_manifest_refuses_while_a_job_runs_or_the_guard_cannot_say(inst, capsys,
     assert not (tmp_path / ".autodl").exists() or not list((tmp_path / ".autodl").glob("manifest-*"))
 
 
+def test_digests_that_break_off_are_told_from_a_record_out_of_shape():
+    listing = b"f\t1\t1.0\ta\0LISTED\0"
+    digest = hashlib.sha256(b"1").hexdigest().encode() + b"  ./a\0"
+    assert ctl.manifest_entries(listing + digest + b"HASHED\0", True)[0][5] == hashlib.sha256(b"1").hexdigest()
+    with pytest.raises(ValueError, match="broke off.*try again"):
+        ctl.manifest_entries(listing + digest, True)                 # sha256sum stopped: no closing mark
+    with pytest.raises(ValueError, match="broke off.*try again"):
+        ctl.manifest_entries(b"f\t1\t1.0\ta\0", False)                # find stopped: no closing mark
+    with pytest.raises(ValueError, match="out of shape"):
+        ctl.manifest_entries(b"f\t1\ta\0LISTED\0", False)             # a record that is not a record
+    with pytest.raises(ValueError, match="out of shape"):
+        ctl.manifest_entries(listing + b"nonsense\0HASHED\0", True)
+
+
 @needs_bash
 def test_a_manifest_that_is_cut_short_leaves_no_file(inst, capsys, tmp_path, cl):
     rem, _ = cl
@@ -215,6 +229,8 @@ def test_a_manifest_that_is_cut_short_leaves_no_file(inst, capsys, tmp_path, cl)
     inst.put("bin/find", "#!/bin/bash\n# a listing that breaks off\nprintf 'f\\t1\\t1.0\\thalf\\0'; exit 1\n", "755")
     rc, res = run(capsys, "manifest", "demo", "--project", tmp_path)
     assert rc == ctl.EXIT_ERR and "incomplete" in res["error"], res
+    # it says what happened and what to do: find stops like this when files come and go under it, as while a copy runs
+    assert "broke off" in res["error"] and "try again" in res["error"], res
     inst.put("bin/find", "#!/bin/bash\n# a listing that takes too long\nsleep 8\n", "755")
     rc, res = run(capsys, "manifest", "demo", "--project", tmp_path, "--timeout", "2s")
     assert rc == ctl.EXIT_ERR and "time" in res["error"], res

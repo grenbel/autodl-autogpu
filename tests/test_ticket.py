@@ -486,6 +486,23 @@ def test_start_extend_and_clear_on_the_new_instance(box, capsys, cl):
     assert rc == 0 and res["removed"] is False and res["handoff"] == "complete", res
 
 
+def test_extend_never_brings_the_deadline_nearer(box, capsys, cl):
+    """A ticket written with a long deadline (a large data disk) is not cut short by the 30 minutes the take-over asks
+    for: the later of the two stays, the ticket is not rewritten, and the answer says that it was kept."""
+    rem, txn = cl
+    txn = on_the_clone(capsys, cl)
+    rc, res = tk(capsys, "extend", "demo-c", "--txn", txn, "--deadline", "3h")      # the instance's own clock counts
+    assert rc == 0 and res["kept"] is False and abs(res["deadline"] - (now() + 10800)) < 30, res
+    late = res["deadline"]
+    before = box.cat("ticket.sh")
+    rc, res = tk(capsys, "extend", "demo-c", "--txn", txn, "--deadline", "5m")
+    assert rc == 0 and res["deadline"] == late and res["kept"] is True, res
+    assert box.cat("ticket.sh") == before and record(txn)["ticket_deadline"] == late
+    rc, res = tk(capsys, "extend", "demo-c", "--txn", txn, "--deadline", "4h")
+    assert rc == 0 and res["kept"] is False and abs(res["deadline"] - (now() + 14400)) < 30, res
+    assert record(txn)["ticket_deadline"] == res["deadline"]
+
+
 def test_clear_does_not_count_a_loop_that_stays(box, capsys, cl):
     rem, txn = cl
     txn = on_the_clone(capsys, cl)

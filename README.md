@@ -66,7 +66,7 @@ Just say what you want done: "start the training", "shut it down once the data i
 
 An AutoDL instance is tied to one host. When other users hold all the GPUs of that host, your instance cannot be powered on in GPU mode. Normally the AI waits: it looks every few minutes, powers on as soon as a GPU is free, and tells you when none comes.
 
-You can also let it clone when the wait runs out. The feature is off by default and is used only after you have said so. Once it is on and no GPU has come free within the time you set (30 minutes by default), the AI rents a second instance with the configuration of the original (the same region; the same GPU model and count, CPU and memory; the same driver or a newer one; a price that is not higher; the same paid expansion of the data disk when the original has one), has the system disk and the data disk copied over, and carries the job on there. When there is no such host with a free GPU it does not clone: it keeps waiting and tells you. None of this needs you to be there. Turning the feature on is your consent to this spending, given in advance: when the time comes the AI does not ask again, it tells you in one line what it is about to rent and for how much, and goes on.
+You can also let it clone when the wait runs out. The feature is off by default and is used only after you have said so. Once it is on and no GPU has come free within the time you set (30 minutes by default), the AI rents a second instance with the configuration of the original (the same region; the same GPU model and count, and the same CPU cores and memory per GPU; the same driver or a newer one; the CPU model may differ; a price that is not higher; the same paid expansion of the data disk when the original has one), has the system disk and the data disk copied over, and carries the job on there. When there is no such host with a free GPU it does not clone: it keeps waiting and tells you. None of this needs you to be there. Turning the feature on is your consent to this spending, given in advance: when the time comes the AI does not ask again, it tells you in one line what it is about to rent and for how much, and goes on.
 
 What to know before you turn it on.
 
@@ -77,7 +77,7 @@ What to know before you turn it on.
 - **The AI powers the original on without GPU twice**, for a few minutes each: once to prepare the clone, once to remove the ticket at the end. It does so even when you allowed GPU use only
 - How many clones a task may make is yours to set, 1 by default
 
-The details are in `reference/clone.md`. This feature has been run in full once on a real account, with a very small data disk, see "Platforms".
+The details are in `reference/clone.md`. This feature has been run in full twice on a real account, once with a very small data disk and once with about 20 GB on it, see "Platforms".
 
 ## The guard stays on the instance
 
@@ -138,7 +138,7 @@ The automatic power-on relies on the browser tool's ability to run a script in t
 | Python 3.8 | not verified |
 | The built-in browser of the Claude desktop app | tested, also with its pane hidden: power-on with and without GPU, setting and cancelling the shutdown timer |
 | The Claude in Chrome extension | not verified |
-| Cloning when no GPU is free | tested once (2026-10-03): on a real account an instance was cloned, the job moved to it and the clone closed, and every file of the two data disks compared the same; a clone ticket that nobody took over shut its instance down by itself. The data disk was very small (under 200 KB) and the clone was up in about a minute. How long a large data disk takes and what the console shows meanwhile, and how the platform answers when creating fails, have not been seen |
+| Cloning when no GPU is free | tested twice on a real account (2026-10-03 with a data disk under 200 KB, 2026-10-06 with about 21.5 GB in some 66,000 files): an instance was cloned, the job moved to it and the clone closed, and every file of the two data disks compared the same both times; a clone ticket that nobody took over shut its instance down by itself. Both times the new instance was up about a minute after it was created. With the larger disk the data went on arriving for another five minutes or so (about 340 seconds for 21.5 GB), and the console showed the original as 克隆锁定中 (locked for the clone) meanwhile. How the platform answers when creating fails has not been seen |
 
 Live tests on a real instance were done in several sessions from 2026-09-29 to 10-02. The acceptance of 10-02 used the very guard script, ctl and page script that are released, and covered: power-on in both modes, a shutdown timer set before the power-on and cancelled afterwards, the start with the instance, shutdown when idle, a latest shutdown that does not cut a running job, and what to do after the guard's daemon has stopped. One pass was done alone by an AI that had read only the released files and had taken no part in the development. A console timer shutting the machine down at its time was seen on 09-29.
 

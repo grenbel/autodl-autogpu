@@ -3024,19 +3024,28 @@ if [ -r "$R" ]; then tail -n 20 "$R" | while IFS= read -r line; do echo "receipt
 
 
 def ticket_extend_script(mark: str, secs: int, cfg: dict | None = None) -> str:
-    """Remote: under the ticket's lock, replace the deadline line by this instance's clock plus SECS."""
+    """Remote: under the ticket's lock, replace the deadline line by this instance's clock plus SECS, unless the
+    deadline there is later already: a ticket is only ever given more time, and one that has it is left as it is."""
     cfg = cfg or TICKET
     q = shlex.quote
     return _ticket_sh(cfg) + f"""take_lock
 [ -e "$T" ] || {{ echo "error: no ticket on this instance" >&2; exit 3; }}
 [ "$(tfield mark)" = {q(mark)} ] || {{ echo "error: the ticket here carries another mark: it is left alone" >&2; exit 3; }}
 D=$(( $(date +%s) + {int(secs)} ))
-tmp="$T.tmp.$$"
-trap 'rm -f -- "$tmp"' EXIT
-while IFS= read -r line; do
-  case "$line" in "# deadline="*) line="# deadline=$D" ;; esac
-  printf '%s\\n' "$line"
-done < "$T" > "$tmp" && chmod 644 "$tmp" && mv -f -- "$tmp" "$T" || {{ echo "error: cannot write $T" >&2; exit 1; }}
+cur=$(tfield deadline)
+case "$cur" in ''|*[!0-9]*) cur=0 ;; esac
+if [ "$cur" -ge "$D" ]; then
+  D=$cur
+  echo "kept=1"
+else
+  tmp="$T.tmp.$$"
+  trap 'rm -f -- "$tmp"' EXIT
+  while IFS= read -r line; do
+    case "$line" in "# deadline="*) line="# deadline=$D" ;; esac
+    printf '%s\\n' "$line"
+  done < "$T" > "$tmp" && chmod 644 "$tmp" && mv -f -- "$tmp" "$T" || {{ echo "error: cannot write $T" >&2; exit 1; }}
+  echo "kept=0"
+fi
 echo "deadline=$D"
 for k in mark source hosts grace; do echo "$k=$(tfield "$k")"; done
 echo "sha256=$(sha256sum < "$T" | cut -d' ' -f1)"
@@ -3234,8 +3243,8 @@ def cmd_ticket_read(a) -> int:
 
 @refusing
 def cmd_ticket_extend(a) -> int:
-    """Move the deadline of the ticket on the new instance to now + DUR (on the instance's clock), under the lock its
-    loop decides under: so that taking the instance over is not cut short."""
+    """Give the ticket on the new instance until now + DUR (on the instance's clock), under the lock its loop decides
+    under: so that taking the instance over is not cut short. A deadline that is later already stays (kept: true)."""
     secs = parse_duration_s(a.deadline)
     if secs < 60:
         raise ValueError("--deadline: at least a minute")
@@ -3249,7 +3258,8 @@ def cmd_ticket_extend(a) -> int:
             if d.isdigit() else None)
     if want is None or kv.get("sha256") != want:
         return _ticket_fail(EXIT_ERR, kv, "the ticket does not read back as expected after the change", txn=a.txn)
-    out({"ok": True, "txn": a.txn, "deadline": int(d), "copy": ticket_note(a.txn, ticket_deadline=int(d))})
+    out({"ok": True, "txn": a.txn, "deadline": int(d), "kept": kv.get("kept") == "1",
+         "copy": ticket_note(a.txn, ticket_deadline=int(d))})
     return 0
 
 
@@ -3316,7 +3326,10 @@ echo MANIFEST
 
 def manifest_entries(blob: bytes, content: bool) -> list:
     """The listing as entries [type, size, mtime, path, link target or None, SHA-256 or None], sorted by path.
-    ValueError when it is not whole."""
+    ValueError when it is not whole. A part that ends without its closing mark broke off: find and sha256sum stop like
+    that when files come and go under them (seen while the platform was still copying a clone's data disk)."""
+    broke = ("broke off before {} closing mark: the disk may have been changing while it was read, as while a copy "
+             "runs; try again in a while")
     recs = blob.split(b"\0")
     entries, i, listed = [], 0, False
     while i < len(recs):
@@ -3324,6 +3337,8 @@ def manifest_entries(blob: bytes, content: bool) -> list:
         i += 1
         if r == b"LISTED":
             listed = True
+            break
+        if r == b"" and i == len(recs):      # what follows the last NUL: the listing ends here, without its mark
             break
         parts = r.split(b"\t", 3)
         if len(parts) != 4:
@@ -3339,7 +3354,7 @@ def manifest_entries(blob: bytes, content: bool) -> list:
             entries.append([kind.decode("ascii", "replace"), int(size), int(float(mtime)),
                             path.decode("utf-8", "surrogateescape"), target, None])
     if not listed:
-        raise ValueError("the listing is incomplete (it does not end with its closing mark)")
+        raise ValueError("the listing " + broke.format("its"))
     if content:
         hashes, done = {}, False
         while i < len(recs):
@@ -3348,12 +3363,14 @@ def manifest_entries(blob: bytes, content: bool) -> list:
             if r == b"HASHED":
                 done = True
                 break
+            if r == b"" and i == len(recs):
+                break
             h, sep, p = r.partition(b"  ")
             if not sep or len(h) != 64:
                 raise ValueError("the contents' digests are incomplete (a record is out of shape)")
             hashes[(p[2:] if p.startswith(b"./") else p).decode("utf-8", "surrogateescape")] = h.decode("ascii", "replace")
         if not done:
-            raise ValueError("the contents' digests are incomplete (they do not end with their closing mark)")
+            raise ValueError("the contents' digests " + broke.format("their"))
         for e in entries:
             if e[0] == "f":
                 if e[3] not in hashes:
@@ -5033,8 +5050,9 @@ def build_parser() -> argparse.ArgumentParser:
                                                      "plus twice the estimated copy time (ctl manifest gives it)")
     g.add_argument("--grace", default="15m", help="what every boot of a clone gets at least (default 15m)")
     tadd("read", cmd_ticket_read, "the ticket on this instance, and whether its loop runs (read-only)", txn=False)
-    g = tadd("extend", cmd_ticket_extend, "on the new instance: move the ticket's deadline to now + DUR")
-    g.add_argument("--deadline", required=True)
+    g = tadd("extend", cmd_ticket_extend, "on the new instance: give the ticket until now + DUR; a deadline that is "
+                                          "later already stays")
+    g.add_argument("--deadline", required=True, help="DUR, e.g. 30m; never brings the deadline nearer")
     tadd("start", cmd_ticket_start, "on the new instance: start the ticket's loop when it is not running")
     g = tadd("clear", cmd_ticket_clear, "take the ticket away: on the new instance once the guard is armed, on the source "
                                         "with --source")

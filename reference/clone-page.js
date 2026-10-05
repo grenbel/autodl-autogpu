@@ -10,11 +10,12 @@
 // image line, the billing mode selected is 按量计费, one region can be chosen and is selected, no coupon is chosen, and no
 // dialog shows. Anything else is a refusal, {ok: false, refused}, and nothing is clicked.
 // The script only reads the page, apart from these effects on elements it has just checked: click() on the label of a
-// model's checkbox, of a GPU count and of a host's radio, and on the buttons 取消 and 创建并开机; focus() on the input of
-// the expansion (plus a focus event when the page has no focus of its own), for the browser tool to type the number;
-// and setting the scroll position of the host table's body, which makes the page load more hosts or brings a row into
-// view. It never writes the DOM, navigates, sends requests, reads cookies or storage, or reads the page's own data. It
-// has no function that touches the billing mode, the region, the coupon, 全部 or 需要扩容, and it never returns the balance.
+// model's checkbox and of a GPU count, on the circle of a host's radio, and on the buttons 取消 and 创建并开机; focus() on
+// the input of the expansion (plus a focus event when the page has no focus of its own), for the browser tool to type
+// the number; and setting the scroll position of the host table's body, which makes the page load more hosts or brings
+// a row into view. It never writes the DOM, navigates, sends requests, reads cookies or storage, or reads the page's
+// own data. It has no function that touches the billing mode, the region, the coupon, 全部 or 需要扩容, and it never returns
+// the balance.
 // The order: page; tickModel; pickCount; hosts (with loadMoreHosts until all rows are read); pickHost; expansion (with
 // focusExpansion and the browser tool when the number has to be typed); prepareCreate, which returns the prepared copy;
 // confirmCreate, the final confirm, once per page and within two minutes of tickModel; result, read-only, on whatever
@@ -22,7 +23,7 @@
 // The offline test is tests/console/clone_run.js; the mode 'offline-test' works only on its test page.
 (function (mode) {
   'use strict';
-  var VERSION = 1;
+  var VERSION = 3;
   var BRAND = 'autodl-gpu clone-page.js';
   var TEST = mode === 'offline-test';
   var ID_SHAPE = TEST ? /^(abcd|wxyz|mnop|qrst|efgh)\d{6}-\d{4}[a-z]{4}$/ : /^[0-9a-z]{10}-[0-9a-z]{8}$/;
@@ -252,14 +253,18 @@
     }
     return { list: rs, count: Number(on[0].value) };
   }
-  // One row of the host table; or, as a text, the cell that cannot be read (by its column's header).
+  // One row of the host table; or, as a text, the cell that cannot be read (by its column's header). The element to
+  // click for the host is the circle of its radio, not the radio's label: the first column is so narrow that the host
+  // ID after the circle is cut off, and most of the label lies under the next column.
   function readHostRow(tr) {
     var c = list(tr.cells);
     if (c.length !== 9) return 'its nine cells';
     var lab = list(c[0].querySelectorAll('label.el-radio'));
     var ins = lab.length === 1 ? list(lab[0].querySelectorAll('input')) : [];
+    var dot = lab.length === 1 ? list(lab[0].querySelectorAll('.el-radio__input')) : [];
     var sel = lab.length === 1 ? ticked(lab[0]) : null;
     if (ins.length !== 1 || sel === null || !HOST_SHAPE.test(ins[0].value) || textOf(lab[0]) !== ins[0].value) return 'the host ID';
+    if (dot.length !== 1 || !dot[0].contains(ins[0])) return 'the host ID';
     var off = lab[0].classList.contains('is-disabled');
     if (off !== (ins[0].disabled === true)) return 'the host ID';
     var alias = textOf(c[1]);
@@ -285,7 +290,7 @@
     if (!drv || !cuda) return HEAD[7];
     var pr = /^￥(\d+(?:\.\d{1,2})?)\/时(?:￥(\d+(?:\.\d{1,2})?)\/时)?$/.exec(lines(one(c[8], '.price') || c[8]).join(''));
     if (!pr) return HEAD[8];
-    return { el: lab[0], host: ins[0].value, alias: alias, model: mv[0], vramGb: Number(vram[1]), free: Number(ft[1]), total: Number(ft[2]),
+    return { el: dot[0], host: ins[0].value, alias: alias, model: mv[0], vramGb: Number(vram[1]), free: Number(ft[1]), total: Number(ft[2]),
              cpu: Number(cpu[1]), memGb: Number(mem[1]), cpuModel: cm, diskGb: Number(disk[1]), expandGb: Number(room[1]), driver: drv[1],
              cuda: cuda[1], price: pr[1], listPrice: pr[2] || null, disabled: off, selected: sel };
   }
@@ -326,12 +331,13 @@
   }
   // Why a host is not one to clone to, by the rules of the design against the row of the source's own host; '' when it is.
   // The driver need not be the very one of the source's host: a newer driver runs what an older one ran, so the host's
-  // driver and its CUDA limit must only not be older or lower.
+  // driver and its CUDA limit must only not be older or lower. The CPU model need not be the same either (the hosts
+  // are all x86-64); the cores and the memory that one GPU brings must be.
   function unfit(r, ref, gpus, expandGb) {
     if (r.host === ref.host) return 'it is the host of the source instance';
     if (r.model !== ref.model || r.vramGb !== ref.vramGb) return 'another model or memory size';
     if (r.free < gpus) return 'fewer free GPUs than needed';
-    if (r.cpu !== ref.cpu || r.memGb !== ref.memGb || r.cpuModel !== ref.cpuModel) return 'another CPU or memory per GPU';
+    if (r.cpu !== ref.cpu || r.memGb !== ref.memGb) return 'another number of CPU cores or memory per GPU';
     if (!(cmpVer(r.driver, ref.driver) >= 0 && cmpVer(r.cuda, ref.cuda) >= 0)) return 'an older driver or a lower CUDA limit';
     if (fen(r.price) > fen(ref.price)) return 'a higher price';
     if (r.expandGb < expandGb) return 'too little room to expand the data disk';
@@ -421,8 +427,10 @@
         if (why) other.push({ host: r.host, why: why }); else fit.push(r);
       });
     }
-    var newer = function (r) { return r.driver === s.ref.driver && r.cuda === s.ref.cuda ? 0 : 1; };
-    fit.sort(function (a, b) { return newer(a) - newer(b) || b.free - a.free || b.expandGb - a.expandGb; });
+    var far = function (r) {
+      return (r.driver === s.ref.driver && r.cuda === s.ref.cuda ? 0 : 1) + (r.cpuModel === s.ref.cpuModel ? 0 : 1);
+    };
+    fit.sort(function (a, b) { return far(a) - far(b) || b.free - a.free || b.expandGb - a.expandGb; });
     return { ok: true, model: s.model.name, free: s.model.free, total: s.model.total,
              rows: s.rows.map(function (r) {
                return { host: r.host, alias: r.alias, model: r.model, vramGb: r.vramGb, free: r.free, total: r.total, cpu: r.cpu, memGb: r.memGb,

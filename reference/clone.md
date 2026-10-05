@@ -1,10 +1,10 @@
 # 没有空闲卡时的等卡与克隆
 
-适用于 ctl v0.9、`reference/console.js` 第 9 版与 `reference/clone-page.js` 第 1 版。要开有卡而实例所在的主机没有空闲 GPU 时读这一份；`ctl auth show` 的 `clone` 里有没了结的克隆（`open_record` 不为 null）时也先读它，从"对话断了之后"读起。文中的"手册"是 `reference/console.md`，"原机器"是要克隆的那台实例，"新机器"是克隆出来的那台，"事务号"是开克隆记录时得到的 16 位十六进制数。`ctl` 的调用方式见 SKILL.md。
+适用于 ctl v0.9、`reference/console.js` 第 9 版与 `reference/clone-page.js` 第 3 版。要开有卡而实例所在的主机没有空闲 GPU 时读这一份；`ctl auth show` 的 `clone` 里有没了结的克隆（`open_record` 不为 null）时也先读它，从"对话断了之后"读起。文中的"手册"是 `reference/console.md`，"原机器"是要克隆的那台实例，"新机器"是克隆出来的那台，"事务号"是开克隆记录时得到的 16 位十六进制数。`ctl` 的调用方式见 SKILL.md。
 
-克隆是新租一台同原机器配置一样的实例（驱动可以更新，见"找合适的主机"第 8 步），把系统盘与数据盘拷过去，任务换到新机器上跑。它花钱，只在用户开启了自动克隆、等卡等满之后做。全程不需要用户在场，对用户只在三处说话，即决定克隆时一句，换过去时汇报一次，出了问题时。你不释放任何实例，原机器由用户自己释放。
+克隆是新租一台同原机器配置一样的实例（驱动可以更新，CPU 型号可以不同，见"找合适的主机"第 8 步），把系统盘与数据盘拷过去，任务换到新机器上跑。它花钱，只在用户开启了自动克隆、等卡等满之后做。全程不需要用户在场，对用户只在三处说话，即决定克隆时一句，换过去时汇报一次，出了问题时。你不释放任何实例，原机器由用户自己释放。
 
-实测情况。写这一份时（2026-10-03），整个过程在真实账号上完整做过一次，从找合适的主机、准备、创建、认出、接手、换过去到了结，新旧两台数据盘的内容逐个文件校验一致；没人接手的票到点自己关机也在新机器上试过。那一次数据盘很小（五百多个文件，不到 200 KB），点"创建并开机"约一分钟后新的一行就是运行中。还没有见过的有三样，数据盘大的时候拷贝当中是什么样子、要多久，平台报错时怎么回答，点创建之后弹出确认框；下文写着"没有见过"的地方，遇到了就照"出错与停下"办，不猜。
+实测情况。整个过程在真实账号上完整做过两次，从找合适的主机到了结，2026-10-03 那次数据盘不到 200 KB，10-06 那次约 21.5 GB、6 万多个文件，两次新旧数据盘的内容都逐个文件校验一致；没人接手的票到点自己关机也试过。还没有见过的有四样，平台报错时怎么回答，点创建之后弹出确认框，`pickCount` 换卡数，`focusExpansion` 填扩容量（两次页面都自己填好了）；遇到了照"出错与停下"办，不猜。
 
 ## 设置
 
@@ -58,7 +58,7 @@ return { ok: true, version: api.version, mode: api.mode, clone: api.clone, page:
 
 预期返回 `ok: true`、`version: 9`、`mode: 'live'`、`clone: true`。`clone` 不是 true，是页面里先有了平时那一份，刷新后再放。
 
-创建页（点"继续"之后的那一页）用 `reference/clone-page.js`，贴的是它去掉注释的 `reference/clone-page.min.js`（函数文本 29506 字节，SHA-256 `d00ffd252ccf4245eaba90e86bf9de8d1321317c1575183f3e559b9b429bc3b2`）。它注册成 `window.__autodlClone`，每个函数的第一个参数都是原机器的实例 ID。页面是在同一个标签页里换到创建页的，实例列表页的脚本对象还在，但它在创建页上一概拒绝。
+创建页（点"继续"之后的那一页）用 `reference/clone-page.js`，贴的是它去掉注释的 `reference/clone-page.min.js`（函数文本 29686 字节，SHA-256 `4742a3ef6b0bab636d6872e0366fd6d9429bb8c2f3e51900105032542b428dbc`）。它注册成 `window.__autodlClone`，每个函数的第一个参数都是原机器的实例 ID。页面是在同一个标签页里换到创建页的，实例列表页的脚本对象还在，但它在创建页上一概拒绝。
 
 ```js
 (async function () {
@@ -67,7 +67,7 @@ var t = fn.toString();
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 29506 || h !== 'd00ffd252ccf4245eaba90e86bf9de8d1321317c1575183f3e559b9b429bc3b2') return { ok: false, bytes: b.length, sha256: h };
+if (b.length !== 29686 || h !== '4742a3ef6b0bab636d6872e0366fd6d9429bb8c2f3e51900105032542b428dbc') return { ok: false, bytes: b.length, sha256: h };
 try { sessionStorage.setItem('__autodl_clone_page_text', t); } catch (e) {}
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode };
@@ -82,16 +82,16 @@ if (!t) return { ok: false, stored: false };
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 29506 || h !== 'd00ffd252ccf4245eaba90e86bf9de8d1321317c1575183f3e559b9b429bc3b2') return { ok: false, stored: true, bytes: b.length, sha256: h };
+if (b.length !== 29686 || h !== '4742a3ef6b0bab636d6872e0366fd6d9429bb8c2f3e51900105032542b428dbc') return { ok: false, stored: true, bytes: b.length, sha256: h };
 var fn = (0, eval)('(' + t + ')');
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode };
 })()
 ```
 
-预期返回 `ok: true`、`version: 1`、`mode: 'live'`。两组模板答 `ok: false` 或 `stored: false` 时的处理同手册第 2 节。
+预期返回 `ok: true`、`version: 3`、`mode: 'live'`。两组模板答 `ok: false` 或 `stored: false` 时的处理同手册第 2 节。
 
-- 创建页比实例列表长。进创建页后先用 `resize_window` 把视口设成宽 1600、高 2400；脚本不点视口外的东西，拒绝原因里有 `is outside the viewport` 时再加高（2026-10-03 在真实页面上试过，这个高度够用）。克隆的事做完后恢复
+- 创建页比实例列表长。进创建页后先用 `resize_window` 把视口设成宽 1600、高 2400；脚本不点视口外的东西，拒绝原因里有 `is outside the viewport` 时再加高（实测这个高度够用）。克隆的事做完后恢复
 - 创建页上从勾型号到最终确认只有两分钟，脚本自己卡着。所以不依赖创建页读数的事都排在进创建页之前
 - 页面内部的数据只经 `sshAddress` 读（"认出新实例"第 3 步）。它拒绝或读不到时请用户贴登录指令，不另写脚本去看页面的数据
 
@@ -106,7 +106,7 @@ return { ok: true, version: api.version, mode: api.mode };
 5. `continueClone(ctx)`，页面换到创建页，这次操作结束。要放弃就在这之前 `dismiss(ctx)`
 6. 设视口，放创建页的脚本（上一节）。`window.__autodlClone.page('<原机器ID>')`，下面创建页的函数都这样调用。每个函数先过同一道门，即地址是这台实例的克隆创建页并带着 `copy_data_disk=1`，页面上"源实例"与"镜像"两处写的是这台实例，计费方式选中的是"按量计费"，地区只有一个可选并已选中，"优惠券"是"请选择"，没有别的框。返回的 `expandGb` 要等于第 4 步读到的数，`models` 里有原机器的型号，`count` 是选中的卡数
 7. `tickModel('<原机器ID>', '<型号>')`；卡数不同时 `pickCount('<原机器ID>', <gpus>)`。截小图，`hosts('<原机器ID>', <gpus>, <expandGb>)`（说主机表在加载就截小图再试）。`complete` 为假是还有行没加载，`loadMoreHosts('<原机器ID>')`、截小图、再 `hosts`，至多 10 次。10 次之后仍为假的，`reference` 不为 null 就照已经加载的行往下判断，为 null 就停下告诉用户
-8. 看 `hosts` 的回答。`reference` 是原机器所在的主机（主机 ID 是实例 ID 的前半段），判断都拿它那一行作参照；`complete` 为真而 `reference` 为 null 就停下告诉用户，不猜。`referenceFree` 为真是原机器的主机这时有卡了，`leave('<原机器ID>')`，回去开原机器。`suitable` 是此刻合适的主机，驱动同参照行一样的排在前，其次是驱动更新的，各自之内空闲卡多的、可扩容量大的在前；别的在 `unsuitable` 里各有第一条不合适的原因。合适由脚本判断：主机表是"主机ID、算力型号/显存、空闲GPU、每GPU分配、CPU型号、硬盘、驱动/CUDA、价格(单卡)"这几列；型号与显存、每卡的 CPU 与内存、CPU 型号同参照行相同；驱动与 CUDA 上限不低于参照行的（更新的驱动跑得了旧驱动上能跑的程序，更旧的不行；版本按点分的数字逐段比，读不成数字的不算合适）；空闲卡不少于 `gpus`；单价不高于参照行；可扩容量不小于 `expandGb`；不是原机器所在的那一台
+8. 看 `hosts` 的回答。`reference` 是原机器所在的主机（主机 ID 是实例 ID 的前半段），判断都拿它那一行作参照；`complete` 为真而 `reference` 为 null 就停下告诉用户，不猜。`referenceFree` 为真是原机器的主机这时有卡了，`leave('<原机器ID>')`，回去开原机器。`suitable` 是此刻合适的主机，驱动与 CPU 型号都同参照行一样的排在前，其次是有一样不同的，再次是两样都不同的，各自之内空闲卡多的、可扩容量大的在前；别的在 `unsuitable` 里各有第一条不合适的原因。合适由脚本判断：主机表是"主机ID、算力型号/显存、空闲GPU、每GPU分配、CPU型号、硬盘、驱动/CUDA、价格(单卡)"这几列；型号与显存、每卡的 CPU 核数与内存同参照行相同；CPU 型号可以不同（主机都是 x86-64 的）；驱动与 CUDA 上限不低于参照行的（更新的驱动跑得了旧驱动上能跑的程序，更旧的不行；版本按点分的数字逐段比，读不成数字的不算合适）；空闲卡不少于 `gpus`；单价不高于参照行；可扩容量不小于 `expandGb`；不是原机器所在的那一台
 9. `suitable` 为空就不克隆。`leave`，回实例列表，把缺的是哪一项告诉用户（没有空闲卡、驱动更旧、可扩容量不够等），照"出错与停下"第一行接着等
 10. 有合适的，再只读地看一遍要创建的东西，`pickHost('<原机器ID>', '<suitable 的第一台>')`，`prepareCreate('<原机器ID>', {host: '<主机ID>', model: '<型号>', gpus: <卡数>, expandGb: <扩容量>})`（它核对什么见"创建"第 5 步），记下 `copy` 里的 `price`（单价）与 `daily`（扩容的日常费用）。记下 `suitable` 的全部主机 ID。`leave('<原机器ID>')`（创建页的"取消"去的是算力市场页），再用 `navigate` 回实例列表
 
@@ -131,7 +131,7 @@ return { ok: true, version: api.version, mode: api.mode };
 
 创建就是新租一台机器，过的是开机的同一套关口，最后点的是"创建并开机"。
 
-1. 先做不靠创建页读数的事。原机器有付费扩容时 `ctl auth daily --instance <原机器ID> --fee <daily>`（"找合适的主机"第 10 步记下的日常费用），把原机器这笔钱登记进账本；它从本预算周期开头算起，同样的数已经登记过就什么都不写。读余额（手册第 4 节）。票写好已超过 15 分钟的，照上一节重新做准备。`ctl clone-record update --txn <事务号> --stage reserve`
+1. 先做不靠创建页读数的事。原机器有付费扩容时 `ctl auth daily --instance <原机器ID> --fee <daily>`（"找合适的主机"第 10 步记下的日常费用），把原机器这笔钱登记进账本；它从本预算周期开头算起，同样的数已经登记过就什么都不写，登记过别的数（扩容量变过）时照它说的加 `--from <变更的时刻>`。读余额（手册第 4 节）。票写好已超过 15 分钟的，照上一节重新做准备。`ctl clone-record update --txn <事务号> --stage reserve`
 2. 回实例列表，刷新并放好克隆的那份脚本，再读原机器这一行。有"GPU充足"了就开原机器，不克隆，票与记录照上一节末尾了结。`idDigests()`，记下返回的 `digests`，它是各行实例 ID 的摘要，不含 ID 本身，认新实例时用
 3. 同"找合适的主机"第 2 到 8 步进创建页、读主机表，`tickModel` 那一下起算两分钟。在记录准许的主机（开记录时的 `--hosts`）里取 `suitable` 中排在最前的一台。准许的主机此刻一台都不合适，就 `leave`，照"出错与停下"第一行接着等
 4. `pickHost('<原机器ID>', '<主机ID>')`，返回 `already` 是页面自己已经选中了它。`expansion('<原机器ID>')` 的 `gb` 与 `now` 要等于原机器的扩容量。页面没填或填的不对时 `focusExpansion('<原机器ID>')`，用浏览器工具全选、打数字、回车，再 `expansion` 读回，读回来不对就不克隆。没有扩容时输入框是空的，不用动。"需要扩容"这个勾脚本不点
@@ -144,18 +144,18 @@ return { ok: true, version: api.version, mode: api.mode };
 ## 认出新实例
 
 1. 回实例列表（页面自己跳过去的也刷新一次），放好克隆的那份脚本。`findCreated(digests, '<主机ID>', '<原机器的 spec>')`，平台给过新实例 ID 的把它作第四个参数。候选是这样的行，ID 的摘要不在 `digests` 里，ID 以主机 ID 加连字符开头，规格的文字同原机器的一样。`count` 为 1 就记下它的 ID，平台没给过 ID 的这时 `ctl clone-record update --txn <事务号> --set instance=<候选ID>`。为 0 就隔一分钟再读；多于 1 停下。它这时还只是候选，证实之前不对它做任何改动，不记账，不设定时，不部署
-2. 每分钟刷新读一次 `row('<候选ID>')`，等它变成运行中（实测点完约一分钟就是，数据盘很小）。创建当中的状态原文没有见过，不认识的状态只等不点。它一运行中就接着做下面几步与"接手"第 1 步，中间不插别的事，原因见那一步
+2. 每分钟刷新读一次 `row('<候选ID>')`，等它变成运行中（实测先是"开机中"，点完约一分钟运行中，同数据盘大小无关；原机器那一行这期间是"克隆锁定中"，数据拷完回到"已关机"）。不认识的状态只等不点。它一运行中就接着做下面几步与"接手"第 1 步，中间不插别的事，原因见那一步
 3. `sshAddress('<候选ID>')` 给出 `host` 与 `port`。在 `~/.ssh/config` 里照 `reference/ssh.md` 的"别名的写法与第一次连接"给它写一个新别名（原别名加后缀，例如 `<原别名>-c1`；密钥用原别名的那一把，SSH 公钥是账号级的；原别名那一条不动）。`sshAddress` 拒绝时请用户把这台新实例的登录指令贴过来
 4. `ctl wait <新别名> --mode gpu`，再 `ctl check <新别名> --instance <候选ID>`。主机名对不上，照 SKILL.md 立即停下
 5. `ctl ticket read <新别名> --txn <事务号>`。四样都对才认定它是这一次克隆出来的，即点创建之后没有报错（"创建"第 9 步），候选恰好一个，`mark_matches` 为真（票上的标记就是事务号），`allowed` 为真（它所在的主机在票准许之列）。对不上就不碰它，不记账，告诉用户。`loop` 为假是票的循环没在跑，这台机器眼下没有兜底，这时 `ctl ticket start <新别名> --txn <事务号>`；起不来就给这一行设一个 30 分钟后的定时关机，先把打算设的时刻记进记录（`ctl clone-record update --txn <事务号> --set emergency-timer='<那个时刻>'`，记在动手之前，中途断了下一个对话也知道这一行上可能有定时），再照手册第 8 节设上，读回来的时刻不同就改记录；两样都不成就把它关机，告诉用户
-6. 认定之后先 `ctl ticket extend <新别名> --txn <事务号> --deadline 30m`，免得接手当中到点（设过应急定时的，把它也改到同一时刻，记录里的跟着改）。然后立刻记账，`ctl auth inherit --from <原机器ID> --to <新ID> --req <req> --alias <新别名>`（有扩容时加 `--daily <copy.daily>`），`ctl log on --instance <新ID> --req <req> --at <T0> --field mode=gpu --field price=<copy.price> --field gpus=<卡数>`，`ctl clone-record update --txn <事务号> --stage adopted`。inherit 给新实例建一份同原机器一样的授权，把预留挪到它名下，并把两台记进同一个预算组，预算只有一份，两台的花费加起来算
+6. 认定之后先 `ctl ticket extend <新别名> --txn <事务号> --deadline 30m`，免得接手当中到点，时限本来更晚的它不动（设过应急定时的，把它也改到同一时刻，记录里的跟着改）。然后立刻记账，`ctl auth inherit --from <原机器ID> --to <新ID> --req <req> --alias <新别名>`（有扩容时加 `--daily <copy.daily>`），`ctl log on --instance <新ID> --req <req> --at <T0> --field mode=gpu --field price=<copy.price> --field gpus=<卡数>`，`ctl clone-record update --txn <事务号> --stage adopted`。inherit 给新实例建一份同原机器一样的授权，把预留挪到它名下，并把两台记进同一个预算组，预算只有一份，两台的花费加起来算
 
 ## 接手
 
 次序同平时开机不同。先把守护配上，再核对数据盘与规格，都过了才撤票；撤票之前票一直是兜底。
 
-1. 配守护，认定之后立刻做。`ctl deploy <新别名>`，`ctl arm <新别名> ...`（设置同原机器），`ctl status <新别名>` 里 `armed_this_boot=1`、`armed_by=arm`、`needs_rearm=0` 才算配好。新机器带着原机器的自启钩子与按模式存下的设置，容器一启动守护多半已经自己起来（`armed_by=boot`），用的是原机器上一次在这个模式下的空闲时限，机器闲着就按它关机（实测存下的是 2 分钟，新机器开机不到 3 分钟被它关了）。你的 arm 替换它，空闲从这时重新算
-2. 数据盘拷完了没有，以清单为准，平台不显示拷贝的进度与完成（实测一次，数据盘很小，清单第一次比就一样；数据盘大的时候没有见过）。`ctl manifest <新别名> --compare <原机器的清单文件> --project <项目根目录>`，`same` 为真才往下，不一样时 `differences` 列出前 20 条，隔 3 分钟再比，到估计拷贝时间（`copy_estimate_s`）的两倍还不一样就照"出错与停下"办。等的时间要超过票的最晚时刻（`ctl ticket read` 的 `deadline_in_s`）时先 `ctl ticket extend`。清单只说明数据盘上有哪些文件、各多大；系统盘不在里面，内容也没有逐个校验
+1. 配守护，认定之后立刻做。`ctl deploy <新别名>`，`ctl arm <新别名> ...`（设置同原机器），`ctl status <新别名>` 里 `armed_this_boot=1`、`armed_by=arm`、`needs_rearm=0` 才算配好。新机器带着原机器的自启钩子与按模式存下的设置，容器一启动守护多半已经自己起来（`armed_by=boot`），用的是原机器上一次在这个模式下的空闲时限，机器闲着就按它关机（实测过，开机不到 3 分钟被它关了）。你的 arm 替换它，空闲从这时重新算
+2. 数据盘是新机器开机之后才陆续拷到的（实测 21.5 GB 约 340 秒），拷完了没有以清单为准。`ctl manifest <新别名> --compare <原机器的清单文件> --project <项目根目录>`，`same` 为真才往下，不一样时 `differences` 列出前 20 条，隔 3 分钟再比（退出 1、说 broke off 的是文件正在变，也隔一会再比），到估计拷贝时间（`copy_estimate_s`）的两倍还不一样就照"出错与停下"办。等的时间要超过票的最晚时刻（`ctl ticket read` 的 `deadline_in_s`）时先 `ctl ticket extend`。清单只说明数据盘上有哪些文件、各多大；系统盘不在里面，内容也没有逐个校验
 3. 核对规格。`ctl spec <新别名> --gpu-model '<型号>' --gpus <卡数> --driver <copy.driver> --cpu-per-gpu <copy.cpu> --mem-per-gpu-gb <copy.memGb> --min-system-bytes <清单里的 system_bytes> --min-data-bytes <清单里的 data_bytes>`，`match` 为真才往下，不符的在 `diff` 里
 4. 撤票。`ctl ticket clear <新别名> --txn <事务号>` 在票的那把锁里确认守护是这次配的并且活着，删掉票，再等循环留下回执，退出 0 才算交接完成。退出 6 是没等到回执，再 `ctl ticket read`，票还在就重撤。退出 4 是循环已经发出了关机，按新机器被关了处理，照"关机"收尾，重新开机后从这一节接着做。退出 3 是守护没配好，票没动
 5. 读新机器这一行的定时关机（`row('<新ID>')` 的 `timer`）。记录里有应急定时、或这一行上有定时的，这时处理掉，用户没选控制台定时关机就取消它（手册第 5 节），再 `ctl clone-record update --txn <事务号> --set emergency-timer=none`。用户选了控制台定时关机的，这时照手册第 8 节设上，时刻是 T0 加用户选的时长。然后 `ctl clone-record update --txn <事务号> --stage taken-over`
@@ -165,16 +165,16 @@ return { ok: true, version: api.version, mode: api.mode };
 
 - 任务启动后观察 10 分钟。没问题是指这几样同时成立，任务还在跑或已经正常结束；`ctl status` 里 `daemon_alive=1`、`armed_this_boot=1`、`armed_by=arm`、`needs_rearm=0`；GPU 的信号读得到，任务用 GPU 的还要见过它在用；上一节各步都过了
 - 满足就换过去。项目 `## AutoDL` 段的 instance_id 与 ssh_alias 改成新机器的，加一行 `previous_instance: <原机器ID>（它的 place；哪天克隆到 <新ID>；数据核对到什么程度；打算怎么处理）`，`ctl clone-record update --txn <事务号> --stage switched`，向用户汇报一次（内容见下一节）。之后开关机与跑任务都用新机器
-- 任务自己的错误（代码里的异常、参数写错）照平时处理，改好重跑，观察从重跑算起。机器方面的问题（GPU 用不了、守护起不来、SSH 一直不通）才算克隆没成，这时不换过去，把新机器关机并收尾，告诉用户，两台都留着；了结时 `ctl clone-record close --txn <事务号> --note '<两台各怎么样>'`
+- 任务自己的错误（代码里的异常、参数写错）照平时处理，改好重跑，观察从重跑算起。新机器的驱动更新或 CPU 型号不同是兼容的，平时不用向用户提；任务在原机器上跑得好、到新机器上才出错时，才把两边的驱动与 CPU 型号（`hosts` 的 `rows` 里参照行与所选主机的 `driver`、`cuda`、`cpuModel`）一并告诉用户。机器方面的问题（GPU 用不了、守护起不来、SSH 一直不通）才算克隆没成，这时不换过去，把新机器关机并收尾，告诉用户，两台都留着；了结时 `ctl clone-record close --txn <事务号> --note '<两台各怎么样>'`
 - 了结。换过去之后（没建成或用户叫停之后也一样），把原机器无卡开一次（开机流程照常，预算检查加 `--clone-prep`），`ctl ticket clear <原别名> --txn <事务号> --source`，关机并收尾，`ctl clone-record close --txn <事务号>`，去掉 `## AutoDL` 的 `clone_pending` 一行，告诉用户这一次克隆了结了、可以照常克隆这台机器了。原机器这时开不了无卡的，`ctl clone-record update --txn <事务号> --set note='原机器上的票还没撤'`，告诉用户这期间不要手动克隆它，下次能开时补上，在那之前不再克隆
-- 内容校验放在了结的那一次无卡开机里。`ctl manifest <原别名> --content --project <项目根目录>` 给每个文件取 SHA-256（估计的时间取清单的 `copy_estimate_s`，超过 30 分钟的先问用户做不做）。新机器上没有登记的任务在跑时 `ctl manifest <新别名> --content --compare <原机器带内容的清单文件> --changed-after <任务启动的时刻> --project <项目根目录>`，时刻取 `ctl status <新别名>` 的 `jobs` 里这个任务的 `start`（重跑过的取第一次启动时读到的）。带上它，新机器比原机器多出来的（任务新建的，守护把同名任务的旧记录挪成的 `.prev-` 目录）与那个时刻之后改过的都不比，单独计数（`not_compared`）；其中原机器也有的另计在 `changed_since`，它们被任务改过，原来那一份拷得对不对没法再校验。原机器有而新机器没有的照旧算不同，哪怕是任务自己删掉或改了名的，这时看 `differences` 里的路径判断，照实告诉用户。`same` 为真并且 `changed_since` 为 0 才算内容逐个校验一致
+- 内容校验放在了结的那一次无卡开机里。`ctl manifest <原别名> --content --project <项目根目录>` 给每个文件取 SHA-256（无卡模式实测约每秒 39 MB，估计的时间取清单的 `copy_estimate_s` 的一倍半，超过 30 分钟的先问用户做不做）。新机器上没有登记的任务在跑时 `ctl manifest <新别名> --content --compare <原机器带内容的清单文件> --changed-after <任务启动的时刻> --project <项目根目录>`，时刻取 `ctl status <新别名>` 的 `jobs` 里这个任务的 `start`（重跑过的取第一次启动时读到的）。带上它，新机器比原机器多出来的（任务新建的，守护把同名任务的旧记录挪成的 `.prev-` 目录）与那个时刻之后改过的都不比，单独计数（`not_compared`）；其中原机器也有的另计在 `changed_since`，它们被任务改过，原来那一份拷得对不对没法再校验。原机器有而新机器没有的照旧算不同，哪怕是任务自己删掉或改了名的，这时看 `differences` 里的路径判断，照实告诉用户。`same` 为真并且 `changed_since` 为 0 才算内容逐个校验一致
 
 ## 原机器
 
 - 你不点"释放实例"，两份脚本里没有任何函数点得了它
 - 核对到什么程度，话就说到什么程度。只比过清单的，汇报写"数据盘上文件的路径与大小都一致，共多少个、多少字节，内容没有逐个校验，系统盘没有比"，不说可以释放。内容校验一致的，才写"数据盘内容逐个文件校验一致，可以释放"。`changed_since` 不为 0 的，写明有几个文件在任务启动后被改过、没法校验（路径在 `changed_since_first`），不说可以释放，这几个文件原来的那一份还要不要由用户定
 - 汇报里两台各占一行，让用户在控制台上认得出，各写 `row` 读到的 `place`（第一格里的地区与主机，例如"北京B区 / 123机"）与实例 ID，并写明哪一台是现在用的、哪一台是原来的。两台的型号与规格一样，只说"原机器""新机器"或只给 ID，用户分不清要释放的是哪一行
-- `after` 是 `remind` 时，换过去之后的汇报里写清这几样，两台各是哪一行（照上一条）；上面说的核对结果；新机器的驱动同原机器的不一样时两个版本各是什么；原机器有没有付费扩容、每天扣多少（关着也扣）；平台哪天会自动释放它（最后一次关机之后 15 天）；释放的入口（实例列表这一行"更多"里的"释放实例"）
+- `after` 是 `remind` 时，换过去之后的汇报里写清这几样，两台各是哪一行（照上一条）；上面说的核对结果；原机器有没有付费扩容、每天扣多少（关着也扣）；平台哪天会自动释放它（最后一次关机之后 15 天）；释放的入口（实例列表这一行"更多"里的"释放实例"）
 - `after` 是 `leave` 时不提醒释放，只说原机器还在、平台哪天自动释放；有付费扩容时照样写明每天在扣多少，不释放就一直扣、一直计入预算。内容没有校验过或校验不一致时没有这一种说法，那时原机器是唯一确定完整的一份，汇报里写明，并说明要留着它就得在到期前开一次机
 - 用户说已经释放了，刷新实例列表核对。原机器那一行不在了、新机器那一行原样，才 `ctl auth released --instance <原机器ID> --at <ctl now 的输出>`，把 `previous_instance` 一行改成已释放。它的日常费用从这时起不再计入，授权撤掉，账本与预算组留着
 - 换过去之后原机器不再由你开机，只有了结时的那一次例外。`previous_instance` 没标成已释放之前，每次用控制台都顺带读它这一行的释放倒计时，剩不到 3 天就提醒用户。别的项目若也在用原机器，它们的对话读 `ctl auth show --instance <原机器ID>` 时会看到 `clone` 里的 `note`，先问用户再开
@@ -188,7 +188,7 @@ return { ok: true, version: api.version, mode: api.mode };
 | opened | 什么都没动，直接 `ctl clone-record close --txn <事务号>` |
 | ticket | 原机器上可能有票。撤票（"准备"末尾的做法），再 close |
 | reserve | 另可能有克隆的预留。`ctl auth show` 的 `open_reservations` 里带 `clone_host` 的那一条用 `ctl auth release` 放掉，撤票，close |
-| click，记录里没有 `answer` | 点没点成不知道。刷新实例列表，用记录里的 `before` 与 `host` 调 `findCreated`。有候选的，记录改到 clicked（`--set answer=`），从"认出新实例"第 1 步做起，是不是这一次建的由票的标记证实。没有候选的，隔一分钟再读，读 10 次还没有，再看收支明细里 T0 之后有没有新实例的扣费。都没有也不就此了结（数据盘大时新的一行多久出现没有见过），告诉用户，预留、记录与原机器上的票都留着。用户看过控制台、说没建成之后，才 `ctl clone-record update --txn <事务号> --stage clicked --set answer= --set created=no --set note='<用户的话>'`，release，撤票，close |
+| click，记录里没有 `answer` | 点没点成不知道。刷新实例列表，用记录里的 `before` 与 `host` 调 `findCreated`。有候选的，记录改到 clicked（`--set answer=`），从"认出新实例"第 1 步做起，是不是这一次建的由票的标记证实。没有候选的，隔一分钟再读，读 10 次还没有，再看收支明细里 T0 之后有没有新实例的扣费。都没有也不就此了结，告诉用户，预留、记录与原机器上的票都留着。用户看过控制台、说没建成之后，才 `ctl clone-record update --txn <事务号> --stage clicked --set answer= --set created=no --set note='<用户的话>'`，release，撤票，close |
 | clicked，`answer` 里没有报错（空着是平常的） | 从"认出新实例"第 1 步做起，T0、请求号、事务号、摘要都在记录里 |
 | clicked，`answer` 是报错的话 | 同 click 一行 |
 | adopted | 从"接手"第 1 步接着做，撤票与弄定时重做一次无害 |
