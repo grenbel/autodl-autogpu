@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="t d">
+  <title id="t">没有空闲 GPU 时的两条路径</title>
+  <desc id="d">满载 GPU 的主机和等待中的实例，通向空闲卡或可选的克隆主机。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1022"/>
+      <stop offset="0.55" stop-color="#101735"/>
+      <stop offset="1" stop-color="#141B3A"/>
+    </linearGradient>
+    <linearGradient id="rack" x1="78" y1="96" x2="346" y2="342" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#28345E"/>
+      <stop offset="0.5" stop-color="#172141"/>
+      <stop offset="1" stop-color="#0D142B"/>
+    </linearGradient>
+    <linearGradient id="slot" x1="1090" y1="108" x2="1230" y2="204" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17354A"/>
+      <stop offset="1" stop-color="#0A1824"/>
+    </linearGradient>
+    <radialGradient id="skyGlow" cx="0" cy="0" r="1" gradientTransform="translate(908 153) rotate(90) scale(150 350)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#60A5FA" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violetGlow" cx="0" cy="0" r="1" gradientTransform="translate(866 325) rotate(90) scale(150 390)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A78BFA" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#A78BFA" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      text { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif; }
+      .waitPulse { animation: wait 4.2s ease-in-out infinite; }
+      .cloneFlow { animation: flow 7s linear infinite; }
+      .copyDots { animation: copy 3.8s ease-in-out infinite; }
+      .runFan { animation: spin 8s linear infinite; transform-box: fill-box; transform-origin: center; }
+      @keyframes wait { 0%, 100% { opacity: 0.18; } 50% { opacity: 0.52; } }
+      @keyframes flow { to { stroke-dashoffset: -72; } }
+      @keyframes copy { 0%, 100% { opacity: 0.3; transform: translateX(0); } 55% { opacity: 0.95; transform: translateX(18px); } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .waitPulse, .cloneFlow, .copyDots, .runFan { animation: none; }
+      }
+    </style>
+  </defs>
+  <rect x="1" y="1" width="1278" height="478" rx="28" fill="url(#bg)" stroke="#FFFFFF" stroke-opacity="0.13"/>
+  <rect x="2" y="2" width="1276" height="476" rx="27" fill="none" stroke="#60A5FA" stroke-opacity="0.05"/>
+  <ellipse cx="908" cy="153" rx="350" ry="150" fill="url(#skyGlow)"/>
+  <ellipse cx="866" cy="325" rx="390" ry="150" fill="url(#violetGlow)"/>
+  <path d="M 462 238 C 560 214 588 170 700 157 C 842 141 952 155 1090 155" fill="none" stroke="#1E294F" stroke-width="20" stroke-linecap="round"/>
+  <path d="M 462 238 C 560 214 588 170 700 157 C 842 141 952 155 1090 155" fill="none" stroke="#60A5FA" stroke-width="12" stroke-linecap="round"/>
+  <path d="M 462 236 C 560 212 588 168 700 155 C 842 139 952 153 1090 153" fill="none" stroke="#EEF2FF" stroke-opacity="0.22" stroke-width="2" stroke-linecap="round"/>
+  <path d="M 462 276 C 548 287 574 325 680 329 C 818 334 918 313 1050 307" fill="none" stroke="#28234E" stroke-width="14" stroke-linecap="round"/>
+  <path class="cloneFlow" d="M 462 276 C 548 287 574 325 680 329 C 818 334 918 313 1050 307" fill="none" stroke="#A78BFA" stroke-width="7" stroke-linecap="round" stroke-dasharray="16 20"/>
+  <ellipse cx="232" cy="367" rx="184" ry="22" fill="#020617" fill-opacity="0.55"/>
+  <polygon points="94,78 324,78 348,96 78,96" fill="#28345E" stroke="#6F7BA6" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="78" y="96" width="268" height="246" rx="22" fill="url(#rack)" stroke="#6F7BA6" stroke-width="3"/>
+  <polygon points="346,96 370,113 370,326 346,342" fill="#0A1022" stroke="#6F7BA6" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="101" cy="119" r="5" fill="#FB7185"/>
+  <circle cx="323" cy="119" r="5" fill="#FB7185"/>
+  <rect x="103" y="129" width="220" height="40" rx="10" fill="#FB7185" fill-opacity="0.08" stroke="#FB7185" stroke-width="3"/>
+  <circle cx="129" cy="149" r="13" fill="#0A1022" stroke="#FB7185" stroke-width="2"/>
+  <path d="M 129 139 V 159 M 119 149 H 139" fill="none" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+  <line x1="157" y1="142" x2="286" y2="142" stroke="#FB7185" stroke-width="4" stroke-linecap="round"/>
+  <line x1="157" y1="156" x2="276" y2="156" stroke="#FB7185" stroke-opacity="0.6" stroke-width="3" stroke-linecap="round"/>
+  <rect x="103" y="178" width="220" height="40" rx="10" fill="#FB7185" fill-opacity="0.08" stroke="#FB7185" stroke-width="3"/>
+  <circle cx="129" cy="198" r="13" fill="#0A1022" stroke="#FB7185" stroke-width="2"/>
+  <path d="M 129 188 V 208 M 119 198 H 139" fill="none" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+  <line x1="157" y1="191" x2="286" y2="191" stroke="#FB7185" stroke-width="4" stroke-linecap="round"/>
+  <line x1="157" y1="205" x2="276" y2="205" stroke="#FB7185" stroke-opacity="0.6" stroke-width="3" stroke-linecap="round"/>
+  <rect x="103" y="227" width="220" height="40" rx="10" fill="#FB7185" fill-opacity="0.08" stroke="#FB7185" stroke-width="3"/>
+  <circle cx="129" cy="247" r="13" fill="#0A1022" stroke="#FB7185" stroke-width="2"/>
+  <path d="M 129 237 V 257 M 119 247 H 139" fill="none" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+  <line x1="157" y1="240" x2="286" y2="240" stroke="#FB7185" stroke-width="4" stroke-linecap="round"/>
+  <line x1="157" y1="254" x2="276" y2="254" stroke="#FB7185" stroke-opacity="0.6" stroke-width="3" stroke-linecap="round"/>
+  <rect x="103" y="276" width="220" height="40" rx="10" fill="#FB7185" fill-opacity="0.08" stroke="#FB7185" stroke-width="3"/>
+  <circle cx="129" cy="296" r="13" fill="#0A1022" stroke="#FB7185" stroke-width="2"/>
+  <path d="M 129 286 V 306 M 119 296 H 139" fill="none" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+  <line x1="157" y1="289" x2="286" y2="289" stroke="#FB7185" stroke-width="4" stroke-linecap="round"/>
+  <line x1="157" y1="303" x2="276" y2="303" stroke="#FB7185" stroke-opacity="0.6" stroke-width="3" stroke-linecap="round"/>
+  <line x1="98" y1="350" x2="98" y2="363" stroke="#6F7BA6" stroke-width="6" stroke-linecap="round"/>
+  <line x1="326" y1="350" x2="326" y2="363" stroke="#6F7BA6" stroke-width="6" stroke-linecap="round"/>
+  <rect class="waitPulse" x="351" y="206" width="128" height="104" rx="24" fill="#60A5FA" fill-opacity="0.05" stroke="#60A5FA" stroke-width="5" opacity="0.3"/>
+  <rect x="359" y="214" width="112" height="88" rx="18" fill="#10172F" stroke="#6F7BA6" stroke-width="3"/>
+  <path d="M 392 235 H 438 M 392 281 H 438" fill="none" stroke="#A9B4D6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M 398 236 C 398 252 432 252 432 268 C 432 274 428 278 424 281" fill="none" stroke="#A9B4D6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M 432 236 C 432 252 398 252 398 268 C 398 274 402 278 406 281" fill="none" stroke="#A9B4D6" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="465" cy="238" r="5" fill="#60A5FA"/>
+  <circle cx="465" cy="276" r="5" fill="#A78BFA"/>
+  <line x1="530" y1="276" x2="530" y2="335" stroke="#A78BFA" stroke-width="7" stroke-linecap="round"/>
+  <line x1="600" y1="294" x2="600" y2="348" stroke="#A78BFA" stroke-width="7" stroke-linecap="round"/>
+  <polygon points="538,288 578,278 578,329 538,318" fill="#A78BFA" fill-opacity="0.07" stroke="#A78BFA" stroke-width="4" stroke-linejoin="round"/>
+  <line x1="538" y1="303" x2="578" y2="297" stroke="#A78BFA" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="538" cy="303" r="6" fill="#FB7185"/>
+  <ellipse cx="718" cy="302" rx="38" ry="12" fill="#172141" stroke="#A78BFA" stroke-width="3"/>
+  <rect x="680" y="302" width="76" height="48" fill="#10172F" stroke="#A78BFA" stroke-width="3"/>
+  <ellipse cx="718" cy="350" rx="38" ry="12" fill="#0A1022" stroke="#A78BFA" stroke-width="3"/>
+  <ellipse cx="718" cy="302" rx="25" ry="7" fill="#A78BFA" fill-opacity="0.12" stroke="#A78BFA" stroke-opacity="0.5"/>
+  <ellipse cx="842" cy="296" rx="38" ry="12" fill="#172141" stroke="#A78BFA" stroke-width="3"/>
+  <rect x="804" y="296" width="76" height="48" fill="#10172F" stroke="#A78BFA" stroke-width="3"/>
+  <ellipse cx="842" cy="344" rx="38" ry="12" fill="#0A1022" stroke="#A78BFA" stroke-width="3"/>
+  <ellipse cx="842" cy="296" rx="25" ry="7" fill="#A78BFA" fill-opacity="0.12" stroke="#A78BFA" stroke-opacity="0.5"/>
+  <g class="copyDots">
+    <circle cx="769" cy="322" r="4" fill="#A78BFA"/>
+    <circle cx="783" cy="320" r="4" fill="#A78BFA" fill-opacity="0.72"/>
+    <circle cx="797" cy="318" r="4" fill="#A78BFA" fill-opacity="0.44"/>
+  </g>
+  <rect x="1081" y="99" width="158" height="114" rx="26" fill="#34D399" fill-opacity="0.055" stroke="#34D399" stroke-opacity="0.2" stroke-width="8"/>
+  <rect x="1090" y="108" width="140" height="96" rx="20" fill="url(#slot)" stroke="#34D399" stroke-width="4"/>
+  <line x1="1160" y1="128" x2="1160" y2="156" stroke="#34D399" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 1139 137 A 34 34 0 1 0 1181 137" fill="none" stroke="#34D399" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="1212" cy="187" r="5" fill="#34D399"/>
+  <rect x="1041" y="238" width="190" height="122" rx="28" fill="#34D399" fill-opacity="0.055" stroke="#34D399" stroke-opacity="0.18" stroke-width="8"/>
+  <rect x="1050" y="247" width="172" height="104" rx="22" fill="#111A35" stroke="#34D399" stroke-width="4"/>
+  <circle cx="1098" cy="299" r="27" fill="#0A1022" stroke="#34D399" stroke-width="3"/>
+  <circle cx="1166" cy="299" r="27" fill="#0A1022" stroke="#34D399" stroke-width="3"/>
+  <g class="runFan">
+    <path d="M 1098 280 V 318 M 1079 299 H 1117" fill="none" stroke="#6F7BA6" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g class="runFan">
+    <path d="M 1166 280 V 318 M 1147 299 H 1185" fill="none" stroke="#6F7BA6" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <circle cx="1204" cy="333" r="6" fill="#34D399"/>
+  <text x="900" y="78" text-anchor="end" fill="#EEF2FF" font-size="34" font-weight="750">等空闲卡</text>
+  <rect x="916" y="49" width="142" height="42" rx="21" fill="#60A5FA" fill-opacity="0.1" stroke="#60A5FA" stroke-opacity="0.5"/>
+  <text x="987" y="78" text-anchor="middle" fill="#60A5FA" font-size="26" font-weight="650">默认</text>
+  <text x="990" y="430" text-anchor="end" fill="#EEF2FF" font-size="34" font-weight="750">克隆到另一台主机</text>
+  <rect x="1006" y="401" width="210" height="42" rx="21" fill="#A78BFA" fill-opacity="0.1" stroke="#A78BFA" stroke-opacity="0.5"/>
+  <text x="1111" y="430" text-anchor="middle" fill="#A78BFA" font-size="26" font-weight="650">默认关闭</text>
+</svg>

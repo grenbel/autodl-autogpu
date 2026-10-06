@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="t d">
+  <title id="t">autodl-autogpu 完成运行</title>
+  <desc id="d">深色应用窗口显示一条请求经过五个已完成的阶段，最终得到记账结果。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1022"/>
+      <stop offset="0.56" stop-color="#101735"/>
+      <stop offset="1" stop-color="#141B3A"/>
+    </linearGradient>
+    <linearGradient id="window" x1="42" y1="28" x2="1238" y2="412" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#080D1C"/>
+      <stop offset="0.52" stop-color="#0B1124"/>
+      <stop offset="1" stop-color="#0E1630"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="42" y1="28" x2="42" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#24315A" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#111A35" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="track" x1="122" y1="248" x2="706" y2="248" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBBF24"/>
+      <stop offset="0.28" stop-color="#60A5FA"/>
+      <stop offset="0.55" stop-color="#34D399"/>
+      <stop offset="0.78" stop-color="#FB7185"/>
+      <stop offset="1" stop-color="#FBBF24"/>
+    </linearGradient>
+    <radialGradient id="ambient" cx="0" cy="0" r="1" gradientTransform="translate(640 240) rotate(90) scale(205 570)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA" stop-opacity="0.08"/>
+      <stop offset="0.58" stop-color="#A78BFA" stop-opacity="0.035"/>
+      <stop offset="1" stop-color="#0B1022" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="travelerGlow" cx="0" cy="0" r="1">
+      <stop offset="0" stop-color="#EEF2FF" stop-opacity="0.9"/>
+      <stop offset="0.28" stop-color="#34D399" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#34D399" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      text { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif; }
+      .prompt { font-family: "Cascadia Code", "SF Mono", Menlo, Consolas, "Microsoft YaHei", monospace; }
+      .fanSpin { animation: spin 8s linear infinite; transform-box: fill-box; transform-origin: center; }
+      .traveler { animation: travel 7.5s ease-in-out infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes travel {
+        0% { opacity: 0; transform: translateX(0); }
+        10% { opacity: 0.82; }
+        84% { opacity: 0.82; transform: translateX(698px); }
+        100% { opacity: 0; transform: translateX(698px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .fanSpin { animation: none; }
+        .traveler { animation: none; opacity: 0; }
+      }
+    </style>
+  </defs>
+  <rect x="1" y="1" width="1278" height="438" rx="28" fill="url(#bg)" stroke="#FFFFFF" stroke-opacity="0.13"/>
+  <rect x="2" y="2" width="1276" height="436" rx="27" fill="none" stroke="#60A5FA" stroke-opacity="0.05"/>
+  <ellipse cx="640" cy="414" rx="530" ry="18" fill="#020617" fill-opacity="0.48"/>
+  <rect x="42" y="28" width="1196" height="384" rx="24" fill="url(#window)" stroke="#A9B4D6" stroke-opacity="0.22" stroke-width="2"/>
+  <ellipse cx="640" cy="240" rx="570" ry="205" fill="url(#ambient)"/>
+  <path d="M 66 84 H 1214" fill="none" stroke="#EEF2FF" stroke-opacity="0.1"/>
+  <path d="M 42 52 Q 42 28 66 28 H 1214 Q 1238 28 1238 52 V 84 H 42 Z" fill="url(#bar)"/>
+  <circle cx="72" cy="56" r="6" fill="#FB7185" fill-opacity="0.82"/>
+  <circle cx="94" cy="56" r="6" fill="#FBBF24" fill-opacity="0.82"/>
+  <circle cx="116" cy="56" r="6" fill="#34D399" fill-opacity="0.82"/>
+  <rect x="64" y="100" width="500" height="52" rx="16" fill="#EEF2FF" fill-opacity="0.035" stroke="#60A5FA" stroke-opacity="0.12"/>
+  <path d="M 77 116 L 88 126 L 77 136" fill="none" stroke="#60A5FA" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text class="prompt" x="105" y="136" fill="#EEF2FF" font-size="30" font-weight="500">把训练跑起来</text>
+  <line x1="122" y1="248" x2="706" y2="248" stroke="#354268" stroke-width="12" stroke-linecap="round" opacity="0.78"/>
+  <line x1="122" y1="248" x2="706" y2="248" stroke="url(#track)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="776" cy="248" r="2.5" fill="#FBBF24" opacity="0.55"/>
+  <circle cx="790" cy="248" r="2.5" fill="#FBBF24" opacity="0.55"/>
+  <circle cx="804" cy="248" r="2.5" fill="#FBBF24" opacity="0.55"/>
+  <circle cx="818" cy="248" r="2.5" fill="#FBBF24" opacity="0.55"/>
+  <circle class="traveler" cx="122" cy="248" r="18" fill="url(#travelerGlow)" opacity="0"/>
+  <circle class="traveler" cx="122" cy="248" r="5" fill="#EEF2FF" opacity="0"/>
+  <g>
+    <circle cx="122" cy="248" r="60" fill="#FBBF24" fill-opacity="0.055" stroke="#FBBF24" stroke-opacity="0.2" stroke-width="8"/>
+    <circle cx="122" cy="248" r="54" fill="#0A1022" stroke="#FBBF24" stroke-width="3"/>
+    <rect x="89" y="223" width="66" height="50" rx="11" fill="#FBBF24" fill-opacity="0.08" stroke="#FBBF24" stroke-width="3"/>
+    <path d="M 90 235 H 146" fill="none" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+    <rect x="134" y="239" width="23" height="18" rx="5" fill="#0A1022" stroke="#FBBF24" stroke-width="3"/>
+    <circle cx="143" cy="248" r="2.5" fill="#FBBF24"/>
+    <text x="122" y="355" text-anchor="middle" fill="#EEF2FF" font-size="26" font-weight="600">预算</text>
+  </g>
+  <g>
+    <circle cx="268" cy="248" r="60" fill="#60A5FA" fill-opacity="0.055" stroke="#60A5FA" stroke-opacity="0.2" stroke-width="8"/>
+    <circle cx="268" cy="248" r="54" fill="#0A1022" stroke="#60A5FA" stroke-width="3"/>
+    <line x1="268" y1="210" x2="268" y2="239" stroke="#60A5FA" stroke-width="7" stroke-linecap="round"/>
+    <path d="M 248 219 A 32 32 0 1 0 288 219" fill="none" stroke="#60A5FA" stroke-width="6" stroke-linecap="round"/>
+    <text x="268" y="355" text-anchor="middle" fill="#EEF2FF" font-size="26" font-weight="600">开机</text>
+  </g>
+  <g>
+    <circle cx="414" cy="248" r="60" fill="#34D399" fill-opacity="0.065" stroke="#34D399" stroke-opacity="0.24" stroke-width="8"/>
+    <circle cx="414" cy="248" r="54" fill="#0A1022" stroke="#34D399" stroke-width="3"/>
+    <rect x="367" y="218" width="94" height="60" rx="11" fill="#172141" stroke="#34D399" stroke-width="3"/>
+    <circle cx="394" cy="248" r="17" fill="#0A1022" stroke="#34D399" stroke-width="2"/>
+    <circle cx="434" cy="248" r="17" fill="#0A1022" stroke="#34D399" stroke-width="2"/>
+    <g class="fanSpin">
+      <path d="M 394 234 V 262 M 380 248 H 408" fill="none" stroke="#6F7BA6" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <g class="fanSpin">
+      <path d="M 434 234 V 262 M 420 248 H 448" fill="none" stroke="#6F7BA6" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <circle cx="450" cy="267" r="4" fill="#34D399"/>
+    <text x="414" y="355" text-anchor="middle" fill="#EEF2FF" font-size="26" font-weight="650">跑任务</text>
+  </g>
+  <g>
+    <circle cx="560" cy="248" r="60" fill="#FB7185" fill-opacity="0.055" stroke="#FB7185" stroke-opacity="0.2" stroke-width="8"/>
+    <circle cx="560" cy="248" r="54" fill="#0A1022" stroke="#FB7185" stroke-width="3"/>
+    <line x1="551" y1="210" x2="551" y2="238" stroke="#FB7185" stroke-width="7" stroke-linecap="round"/>
+    <path d="M 532 220 A 32 32 0 1 0 572 218" fill="none" stroke="#FB7185" stroke-width="6" stroke-linecap="round"/>
+    <path d="M 579 211 C 563 216 559 238 573 247 C 582 252 594 247 600 238 C 588 241 577 231 579 211 Z" fill="#FB7185"/>
+    <text x="560" y="355" text-anchor="middle" fill="#EEF2FF" font-size="26" font-weight="600">关机</text>
+  </g>
+  <g>
+    <circle cx="706" cy="248" r="60" fill="#FBBF24" fill-opacity="0.055" stroke="#FBBF24" stroke-opacity="0.2" stroke-width="8"/>
+    <circle cx="706" cy="248" r="54" fill="#0A1022" stroke="#FBBF24" stroke-width="3"/>
+    <path d="M 678 211 H 734 V 282 L 725 275 L 716 282 L 706 275 L 697 282 L 688 275 L 678 282 Z" fill="#FBBF24" fill-opacity="0.07" stroke="#FBBF24" stroke-width="3" stroke-linejoin="round"/>
+    <line x1="691" y1="229" x2="721" y2="229" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+    <line x1="691" y1="242" x2="721" y2="242" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 691 257 L 700 266 L 722 252" fill="none" stroke="#34D399" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="706" y="355" text-anchor="middle" fill="#EEF2FF" font-size="26" font-weight="600">记账</text>
+  </g>
+  <path d="M 830 288 H 1240" fill="none" stroke="#FBBF24" stroke-width="3" stroke-linecap="round" opacity="0.52"/>
+  <text x="830" y="262" fill="#EEF2FF" font-size="38" font-weight="750">
+    8 分 47 秒 ·
+    <tspan fill="#FBBF24">￥0.14</tspan>
+  </text>
+</svg>

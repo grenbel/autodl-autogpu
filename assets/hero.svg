@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="t d">
+  <title id="t">autodl-autogpu hero</title>
+  <desc id="d">The autodl-autogpu wordmark sits beside a running GPU, a power ring with a small clock, and a night sky.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1022"/>
+      <stop offset="0.56" stop-color="#101735"/>
+      <stop offset="1" stop-color="#141B3A"/>
+    </linearGradient>
+    <radialGradient id="skyGlow" cx="0" cy="0" r="1" gradientTransform="translate(1040 210) scale(192 174)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA" stop-opacity="0.18"/>
+      <stop offset="0.58" stop-color="#A78BFA" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#0B1022" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="runGlow" cx="0" cy="0" r="1" gradientTransform="translate(947 281) rotate(90) scale(104 190)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34D399" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#34D399" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="moonGlow" cx="0" cy="0" r="1" gradientTransform="translate(1180 72) scale(36)" gradientUnits="userSpaceOnUse">
+      <stop offset="0.42" stop-color="#EEF2FF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#EEF2FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ground" cx="0" cy="0" r="1" gradientTransform="translate(958 334) rotate(90) scale(30 216)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#020617" stop-opacity="0.78"/>
+      <stop offset="1" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="940" y1="84" x2="1178" y2="314" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA"/>
+      <stop offset="0.58" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#FB7185"/>
+    </linearGradient>
+    <linearGradient id="card" x1="798" y1="164" x2="1108" y2="316" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#28345E"/>
+      <stop offset="0.48" stop-color="#192447"/>
+      <stop offset="1" stop-color="#10172F"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="774" y1="193" x2="826" y2="306" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3E4D7A"/>
+      <stop offset="1" stop-color="#18213F"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7081B7" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#29365F" stop-opacity="0.28"/>
+    </linearGradient>
+    <style>
+      text { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif; }
+      .pulse { animation: breathe 3.8s ease-in-out infinite; }
+      .twinkle { animation: twinkle 4.6s ease-in-out infinite; }
+      .late { animation-delay: 1.4s; }
+      @keyframes breathe { 0%, 100% { opacity: 0.58; } 50% { opacity: 1; } }
+      @keyframes twinkle { 0%, 100% { opacity: 0.34; } 50% { opacity: 0.92; } }
+      @media (prefers-reduced-motion: reduce) { .pulse, .twinkle { animation: none; } }
+    </style>
+  </defs>
+  <rect x="1" y="1" width="1278" height="418" rx="28" fill="url(#bg)" stroke="#FFFFFF" stroke-opacity="0.13"/>
+  <rect x="2" y="2" width="1276" height="416" rx="27" fill="none" stroke="#60A5FA" stroke-opacity="0.05"/>
+  <ellipse cx="1040" cy="210" rx="192" ry="174" fill="url(#skyGlow)"/>
+  <g font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Helvetica Neue', Arial, sans-serif">
+    <text x="61" y="198" fill="#EEF2FF" font-family="Segoe UI,Arial,sans-serif" font-size="78" font-weight="800" letter-spacing="-0.8">autodl-autogpu</text>
+    <rect x="64" y="220" width="112" height="4" rx="2" fill="#60A5FA"/>
+    <rect x="181" y="220" width="36" height="4" rx="2" fill="#34D399"/>
+    <text x="64" y="272" fill="#EEF2FF" font-family="Segoe UI,Arial,sans-serif" font-size="34" font-weight="600">Power on. Run the job. Shut down.</text>
+  </g>
+  <g>
+    <circle class="twinkle" cx="823" cy="74" r="3" fill="#EEF2FF"/>
+    <circle class="twinkle late" cx="905" cy="45" r="2.5" fill="#60A5FA"/>
+    <circle class="twinkle" cx="1084" cy="56" r="2.5" fill="#EEF2FF"/>
+    <path d="M 783 108 H 797 M 790 101 V 115" stroke="#A78BFA" stroke-width="2" stroke-linecap="round" opacity="0.72"/>
+    <path d="M 1212 145 H 1224 M 1218 139 V 151" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" opacity="0.54"/>
+    <circle cx="1180" cy="72" r="36" fill="url(#moonGlow)"/>
+    <path d="M 1193 37 C 1155 43 1145 93 1177 107 C 1193 114 1212 105 1221 91 C 1206 97 1188 91 1180 77 C 1172 63 1177 47 1193 37 Z" fill="#DCE7FF" fill-opacity="0.9"/>
+  </g>
+  <g transform="translate(32 0)">
+    <circle cx="1047" cy="205" r="137" fill="none" stroke="#60A5FA" stroke-width="24" stroke-opacity="0.14"/>
+    <circle cx="1047" cy="205" r="126" fill="none" stroke="url(#ring)" stroke-width="8" stroke-linecap="round" stroke-dasharray="652 140" transform="rotate(-42 1047 205)"/>
+    <line x1="1047" y1="61" x2="1047" y2="111" stroke="#60A5FA" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="1163" cy="273" r="22" fill="#101735" stroke="#FB7185" stroke-width="3"/>
+    <circle cx="1163" cy="273" r="15" fill="none" stroke="#FB7185" stroke-opacity="0.2"/>
+    <line x1="1163" y1="273" x2="1163" y2="263" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+    <line x1="1163" y1="273" x2="1171" y2="278" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="1163" cy="273" r="2.5" fill="#FB7185"/>
+  </g>
+  <g class="pulse" transform="translate(32 0)">
+    <ellipse cx="949" cy="296" rx="198" ry="78" fill="url(#runGlow)"/>
+    <path d="M 843 156 C 831 139 849 128 839 112" fill="none" stroke="#34D399" stroke-width="4" stroke-linecap="round" opacity="0.42"/>
+    <path d="M 882 151 C 869 132 890 122 879 103" fill="none" stroke="#34D399" stroke-width="4" stroke-linecap="round" opacity="0.64"/>
+    <path d="M 922 146 C 910 129 928 116 919 99" fill="none" stroke="#34D399" stroke-width="4" stroke-linecap="round" opacity="0.38"/>
+  </g>
+  <ellipse cx="958" cy="334" rx="216" ry="30" fill="url(#ground)" transform="translate(32 0)"/>
+  <g transform="translate(32 0) rotate(-4 953 244)">
+    <path d="M 772 194 L 803 171 H 1090 L 1126 198 V 302 L 1096 319 H 810 L 772 287 Z" fill="url(#card)" stroke="#91A4DA" stroke-opacity="0.28" stroke-width="2"/>
+    <path d="M 772 194 L 803 171 V 296 L 810 319 L 772 287 Z" fill="url(#edge)" stroke="#91A4DA" stroke-opacity="0.2"/>
+    <path d="M 803 171 H 1090 L 1126 198 H 832 Z" fill="#3A4775" fill-opacity="0.68"/>
+    <path d="M 789 181 V 163 H 846 V 172" fill="none" stroke="#A9B4D6" stroke-width="6" stroke-linejoin="round" opacity="0.56"/>
+    <rect x="758" y="211" width="16" height="58" rx="3" fill="#A9B4D6" fill-opacity="0.34"/>
+    <rect x="761" y="219" width="10" height="13" rx="2" fill="#0B1022"/>
+    <rect x="761" y="238" width="10" height="13" rx="2" fill="#0B1022"/>
+    <rect x="761" y="257" width="10" height="6" rx="2" fill="#0B1022"/>
+    <circle cx="874" cy="240" r="51" fill="#0A1022" stroke="#8292C4" stroke-opacity="0.34" stroke-width="3"/>
+    <circle cx="874" cy="240" r="43" fill="none" stroke="#60A5FA" stroke-opacity="0.12" stroke-width="2"/>
+    <ellipse cx="874" cy="214" rx="9" ry="23" fill="url(#blade)"/>
+    <ellipse cx="874" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(60 874 240)"/>
+    <ellipse cx="874" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(120 874 240)"/>
+    <ellipse cx="874" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(180 874 240)"/>
+    <ellipse cx="874" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(240 874 240)"/>
+    <ellipse cx="874" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(300 874 240)"/>
+    <circle cx="874" cy="240" r="13" fill="#172141" stroke="#34D399" stroke-opacity="0.6" stroke-width="2"/>
+    <circle cx="1000" cy="240" r="51" fill="#0A1022" stroke="#8292C4" stroke-opacity="0.34" stroke-width="3"/>
+    <circle cx="1000" cy="240" r="43" fill="none" stroke="#60A5FA" stroke-opacity="0.12" stroke-width="2"/>
+    <ellipse cx="1000" cy="214" rx="9" ry="23" fill="url(#blade)"/>
+    <ellipse cx="1000" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(60 1000 240)"/>
+    <ellipse cx="1000" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(120 1000 240)"/>
+    <ellipse cx="1000" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(180 1000 240)"/>
+    <ellipse cx="1000" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(240 1000 240)"/>
+    <ellipse cx="1000" cy="214" rx="9" ry="23" fill="url(#blade)" transform="rotate(300 1000 240)"/>
+    <circle cx="1000" cy="240" r="13" fill="#172141" stroke="#34D399" stroke-opacity="0.6" stroke-width="2"/>
+    <rect x="1063" y="220" width="42" height="5" rx="2.5" fill="#6F7BA6" fill-opacity="0.45"/>
+    <rect x="1063" y="235" width="42" height="5" rx="2.5" fill="#6F7BA6" fill-opacity="0.45"/>
+    <rect x="1063" y="250" width="42" height="5" rx="2.5" fill="#6F7BA6" fill-opacity="0.45"/>
+    <circle class="pulse" cx="1084" cy="281" r="5" fill="#34D399"/>
+    <path d="M 812 296 H 1097" fill="none" stroke="#34D399" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+  </g>
+</svg>

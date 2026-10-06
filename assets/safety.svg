@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-labelledby="t d">
+  <title id="t">Three safeguards for autodl-autogpu</title>
+  <desc id="d">Three night medallions show a budget gate, a GPU guard, and a console timer.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1022"/>
+      <stop offset="0.54" stop-color="#101735"/>
+      <stop offset="1" stop-color="#141B3A"/>
+    </linearGradient>
+    <radialGradient id="amberMedal" cx="0" cy="0" r="1" gradientTransform="translate(186 130) rotate(55) scale(225)">
+      <stop offset="0" stop-color="#FBBF24" stop-opacity="0.16"/>
+      <stop offset="0.48" stop-color="#18203C" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#080D1C"/>
+    </radialGradient>
+    <radialGradient id="greenMedal" cx="0" cy="0" r="1" gradientTransform="translate(604 130) rotate(55) scale(225)">
+      <stop offset="0" stop-color="#34D399" stop-opacity="0.16"/>
+      <stop offset="0.48" stop-color="#18203C" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#080D1C"/>
+    </radialGradient>
+    <radialGradient id="coralMedal" cx="0" cy="0" r="1" gradientTransform="translate(1024 130) rotate(55) scale(225)">
+      <stop offset="0" stop-color="#FB7185" stop-opacity="0.16"/>
+      <stop offset="0.48" stop-color="#18203C" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#080D1C"/>
+    </radialGradient>
+    <style>
+      text { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif; }
+      .gateGlow { animation: gate 3.8s ease-in-out infinite; }
+      .pulseBeat { animation: beat 2.8s ease-in-out infinite; transform-origin: 640px 166px; }
+      .clockHand { animation: tick 9s linear infinite; transform-origin: 1060px 166px; }
+      @keyframes gate { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+      @keyframes beat { 0%, 100% { opacity: 0.58; transform: scale(1); } 45% { opacity: 1; transform: scale(1.035); } }
+      @keyframes tick { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .gateGlow, .pulseBeat, .clockHand { animation: none; }
+      }
+    </style>
+  </defs>
+  <rect x="1" y="1" width="1278" height="458" rx="28" fill="url(#bg)" stroke="#FFFFFF" stroke-opacity="0.13"/>
+  <rect x="2" y="2" width="1276" height="456" rx="27" fill="none" stroke="#60A5FA" stroke-opacity="0.05"/>
+  <ellipse cx="220" cy="310" rx="154" ry="22" fill="#020617" fill-opacity="0.4"/>
+  <ellipse cx="640" cy="310" rx="154" ry="22" fill="#020617" fill-opacity="0.4"/>
+  <ellipse cx="1060" cy="310" rx="154" ry="22" fill="#020617" fill-opacity="0.4"/>
+  <circle cx="220" cy="172" r="124" fill="url(#amberMedal)" stroke="#FBBF24" stroke-opacity="0.3" stroke-width="2"/>
+  <circle cx="220" cy="172" r="116" fill="none" stroke="#FBBF24" stroke-opacity="0.08"/>
+  <rect x="111" y="94" width="218" height="142" rx="18" fill="#0A1022" stroke="#6F7BA6" stroke-opacity="0.7" stroke-width="3"/>
+  <rect x="122" y="105" width="196" height="120" rx="11" fill="#111A35" stroke="#FBBF24" stroke-opacity="0.16"/>
+  <path d="M 96 242 H 344 L 359 257 H 81 Z" fill="#111A35" stroke="#6F7BA6" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="165" y1="121" x2="165" y2="211" stroke="#FBBF24" stroke-width="7" stroke-linecap="round"/>
+  <line x1="287" y1="121" x2="287" y2="211" stroke="#FBBF24" stroke-width="7" stroke-linecap="round"/>
+  <line x1="165" y1="125" x2="287" y2="125" stroke="#FBBF24" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="174,138 247,125 247,204 174,191" fill="#FBBF24" fill-opacity="0.06" stroke="#FBBF24" stroke-width="4" stroke-linejoin="round"/>
+  <line x1="174" y1="164" x2="247" y2="154" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+  <line x1="174" y1="184" x2="247" y2="177" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+  <circle class="gateGlow" cx="174" cy="164" r="9" fill="#FBBF24" opacity="0.35"/>
+  <text x="220" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">Budget gate</text>
+  <text x="220" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">checked before every power-on</text>
+  <circle cx="640" cy="172" r="124" fill="url(#greenMedal)" stroke="#34D399" stroke-opacity="0.3" stroke-width="2"/>
+  <circle cx="640" cy="172" r="116" fill="none" stroke="#34D399" stroke-opacity="0.08"/>
+  <rect x="515" y="112" width="250" height="130" rx="21" fill="#111A35" stroke="#34D399" stroke-opacity="0.7" stroke-width="3"/>
+  <path d="M 515 133 H 500 V 222 H 515 M 500 151 H 490 M 500 205 H 490" fill="none" stroke="#6F7BA6" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="557" cy="177" r="31" fill="#0A1022" stroke="#34D399" stroke-opacity="0.38" stroke-width="3"/>
+  <circle cx="723" cy="177" r="31" fill="#0A1022" stroke="#34D399" stroke-opacity="0.38" stroke-width="3"/>
+  <path d="M 557 154 V 200 M 534 177 H 580 M 723 154 V 200 M 700 177 H 746" fill="none" stroke="#6F7BA6" stroke-width="3" stroke-linecap="round"/>
+  <path d="M 640 103 L 690 124 V 163 C 690 198 670 222 640 238 C 610 222 590 198 590 163 V 124 Z" fill="#0A1022" stroke="#34D399" stroke-width="5" stroke-linejoin="round"/>
+  <path class="pulseBeat" d="M 605 166 H 621 L 631 148 L 644 185 L 657 157 L 666 166 H 676" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="640" cy="172" r="112" fill="none" stroke="#34D399" stroke-opacity="0.07" stroke-width="8"/>
+  <text x="640" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">Guard</text>
+  <text x="640" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">shuts down when idle</text>
+  <circle cx="1060" cy="172" r="124" fill="url(#coralMedal)" stroke="#FB7185" stroke-opacity="0.3" stroke-width="2"/>
+  <circle cx="1060" cy="172" r="116" fill="none" stroke="#FB7185" stroke-opacity="0.08"/>
+  <ellipse cx="1060" cy="214" rx="105" ry="40" fill="#60A5FA" fill-opacity="0.06" stroke="#6F7BA6" stroke-opacity="0.5" stroke-width="3"/>
+  <circle cx="985" cy="194" r="42" fill="#111A35" stroke="#6F7BA6" stroke-opacity="0.46" stroke-width="2"/>
+  <circle cx="1044" cy="175" r="54" fill="#111A35" stroke="#6F7BA6" stroke-opacity="0.46" stroke-width="2"/>
+  <circle cx="1110" cy="193" r="44" fill="#111A35" stroke="#6F7BA6" stroke-opacity="0.46" stroke-width="2"/>
+  <path d="M 1012 102 Q 1024 84 1041 101 M 1107 102 Q 1096 84 1078 101" fill="none" stroke="#FB7185" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="1060" cy="166" r="65" fill="#0A1022" stroke="#FB7185" stroke-width="5"/>
+  <circle cx="1060" cy="166" r="52" fill="#FB7185" fill-opacity="0.045" stroke="#FB7185" stroke-opacity="0.26"/>
+  <line x1="1060" y1="166" x2="1035" y2="144" stroke="#EEF2FF" stroke-width="6" stroke-linecap="round"/>
+  <line class="clockHand" x1="1060" y1="166" x2="1088" y2="130" stroke="#FB7185" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="1060" cy="166" r="7" fill="#FB7185"/>
+  <path d="M 1022 221 L 1011 237 M 1098 221 L 1109 237" fill="none" stroke="#FB7185" stroke-width="6" stroke-linecap="round"/>
+  <text x="1060" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">Console timer</text>
+  <text x="1060" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">shuts down on time, if you set it</text>
+</svg>

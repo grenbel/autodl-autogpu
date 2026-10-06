@@ -235,32 +235,38 @@ def test_both_readmes_tell_a_person_about_the_clone():
 
 
 def _readme_targets(text: str) -> list:
-    """The files a README shows or links to: pictures by their src and Markdown links, without web addresses and
-    without the anchors of the page itself."""
-    targets = re.findall(r'<img[^>]*\bsrc="([^"]+)"', text) + re.findall(r"\]\(([^)\s]+)\)", text)
+    """The files a README shows or links to: pictures by their src, Markdown links and the links written as HTML,
+    without web addresses and without the anchors of the page itself."""
+    targets = (re.findall(r'<img[^>]*\bsrc="([^"]+)"', text) + re.findall(r"\]\(([^)\s]+)\)", text)
+               + re.findall(r'<a[^>]*\bhref="([^"]+)"', text))
     return [t for t in targets if not re.match(r"[a-z]+://|#", t)]
 
 
 def test_what_a_readme_shows_and_links_to_is_in_the_repository():
     """A README is read on GitHub and in the installed directory: every picture and file it points to is a file of
-    the repository, and each language shows its own three diagrams, in the order the text walks through them."""
+    the repository, each language shows its own four pictures in the order the text walks through them, and assets/
+    holds no picture that neither README shows."""
+    used = set()
     for path, suffix in ((README_EN, ".svg"), (README_CN, ".cn.svg")):
         targets = _readme_targets(_text(path))
         for target in targets:
             assert (ROOT / target.split("#", 1)[0]).is_file(), f"{path.name}: {target}"
         shown = [t for t in targets if t.startswith("assets/")]
-        assert shown == [f"assets/{name}{suffix}" for name in ("parts", "run", "clone")], (path.name, shown)
+        assert shown == [f"assets/{name}{suffix}" for name in ("hero", "demo", "safety", "nogpu")], (path.name, shown)
+        used |= set(shown)
+    assert {f"assets/{p.name}" for p in (ROOT / "assets").iterdir()} == used
 
 
 def test_the_links_inside_a_readme_lead_to_its_sections():
-    """The table of contents and the pointers between sections use anchors written into the page, so that they are
-    the same in both languages and do not depend on how a heading is turned into an anchor."""
+    """The line of links under the opening and the pointers between sections use anchors written into the page, so
+    that they are the same in both languages and do not depend on how a heading is turned into an anchor."""
     for path in (README_EN, README_CN):
         text = _text(path)
         anchors = re.findall(r'<a id="([a-z0-9-]+)"></a>', text)
         assert len(anchors) == len(set(anchors)), (path.name, anchors)
-        used = set(re.findall(r"\]\(#([^)]+)\)", text))
+        used = set(re.findall(r"\]\(#([^)]+)\)", text)) | set(re.findall(r'<a href="#([^"]+)"', text))
         assert used and used <= set(anchors), (path.name, sorted(used - set(anchors)))
+        assert re.findall(r'<a href="#([^"]+)"', text), path.name            # the line of links is there
     cn, en = (re.findall(r'<a id="([a-z0-9-]+)"></a>', _text(p)) for p in (README_CN, README_EN))
     assert cn == en                                             # the same sections, in the same order
 
@@ -269,6 +275,27 @@ def test_the_readmes_use_the_skills_present_name():
     for path in (README_EN, README_CN):
         text = _text(path)
         assert "autodl-autogpu" in text and "autodl-gpu" not in text, path.name
+
+
+def test_what_differs_between_claude_code_and_codex_is_named_for_both():
+    """The skill is written for an AI in Claude Code and for one in Codex. Three things differ and are named for
+    both: where the skill is installed, which file of a project the AI reads at the start of every conversation (the
+    `## AutoDL` section goes there), and what counts as a browser tool, which is its ability to run a script in the
+    page and not the name of a product. The manual says once whose names of the browser tool's functions it uses."""
+    skill, manual, more = _text(SKILL), _text(CONSOLE_MD), _text(CONSOLE_MORE_MD)
+    for needed in ("~/.claude/skills/autodl-autogpu/scripts/ctl", "~/.agents/skills/autodl-autogpu/scripts/ctl",
+                   "`CLAUDE.md`", "`AGENTS.md`", "项目说明文件"):
+        assert needed in skill, needed
+    assert "项目 CLAUDE.md" not in skill                    # the file is named in one place, for both hosts
+    without = skill.split("\n## 没有浏览器工具时\n", 1)[1].split("\n## ", 1)[0]
+    assert "在页面里执行脚本" in without, without
+    assert "在页面里执行脚本" in more.split("\n## 16. 没有浏览器工具时\n", 1)[1].split("\n## ", 1)[0]
+    head = manual.split("\n## 1. 基本规则\n", 1)[0]
+    assert "`javascript_tool`" in head and "内置浏览器的叫法" in head and "第 16 节" in head, head
+    for path in (README_CN, README_EN):
+        text = _text(path)
+        for needed in ("~/.claude/skills/autodl-autogpu", "~/.agents/skills/autodl-autogpu", "`CLAUDE.md`", "`AGENTS.md`"):
+            assert needed in text, (path.name, needed)
 
 
 def _headings(path: pathlib.Path) -> set:
@@ -354,9 +381,11 @@ def test_skill_front_matter_and_length():
     # now name the section and not only the file, and an alias the user wrote is looked at before the power-on.
     # 36500 until the wait for a free GPU and the clone came (phase 11): a fifth thing to settle, the wait itself, an
     # unfinished clone that is finished first, and the rule that the page's own data is read by one function only. All
-    # four are known before acting; everything else of the clone is in reference/clone.md. 38000 bytes are about
-    # 15.6k tokens
-    assert len(skill.encode("utf-8")) <= 38000 and skill.count("\n") <= 220
+    # four are known before acting; everything else of the clone is in reference/clone.md. 38000 until the skill was
+    # written for an AI in Codex as well as one in Claude Code (phase 15): where it is installed, which file of the
+    # project holds the section, and what counts as a browser tool differ between the two and are known before
+    # acting. 38500 bytes are about 15.8k tokens
+    assert len(skill.encode("utf-8")) <= 38500 and skill.count("\n") <= 220
     assert "\r" not in skill and skill.endswith("\n")
 
 
