@@ -22,12 +22,12 @@ CTX = mp.get_context("spawn")
 def _fresh() -> tuple:
     base = tempfile.mkdtemp(prefix="autodl-store-check-")
     home = pathlib.Path(base) / "gpu-home"
-    os.environ["AUTODL_GPU_HOME"] = str(home)
+    os.environ["AUTODL_AUTOGPU_HOME"] = str(home)
     return base, home
 
 
 def _made(home: pathlib.Path) -> None:
-    os.environ["AUTODL_GPU_HOME"] = str(home)
+    os.environ["AUTODL_AUTOGPU_HOME"] = str(home)
     with ctl.Store() as st:
         st.save()
 
@@ -74,7 +74,7 @@ def _linked(name):
             real = pathlib.Path(base) / "real-home"
             _made(real)
             home.symlink_to(real, target_is_directory=True)
-            os.environ["AUTODL_GPU_HOME"] = str(home)
+            os.environ["AUTODL_AUTOGPU_HOME"] = str(home)
         else:
             _made(home)
             moved = pathlib.Path(base) / f"moved-{name}"
@@ -88,18 +88,18 @@ def unreadable_parent(base, home):
     """Whether a .git is above cannot be told when a directory on the way cannot be searched: refused."""
     locked = pathlib.Path(base) / "locked"
     locked.mkdir()
-    os.environ["AUTODL_GPU_HOME"] = str(locked / "gpu-home")
+    os.environ["AUTODL_AUTOGPU_HOME"] = str(locked / "gpu-home")
     os.chmod(locked, 0)
     try:
         if os.access(locked, os.X_OK):   # root can search it anyway: nothing to check here
             return True, "skipped: this user can search a directory with mode 000"
-        return _refused("repo", "AUTODL_GPU_HOME")
+        return _refused("repo", "AUTODL_AUTOGPU_HOME")
     finally:
         os.chmod(locked, 0o700)
 
 
 def _child_add(home, prefix, n):
-    os.environ["AUTODL_GPU_HOME"] = home
+    os.environ["AUTODL_AUTOGPU_HOME"] = home
     for i in range(n):
         with ctl.Store() as st:
             st.data["aliases"][f"{prefix}{i}"] = {"instance": ID, "at": 1}
@@ -107,7 +107,7 @@ def _child_add(home, prefix, n):
 
 
 def _child_hold(home, reached):
-    os.environ["AUTODL_GPU_HOME"] = home
+    os.environ["AUTODL_AUTOGPU_HOME"] = home
     with ctl.Store():
         reached.set()
         time.sleep(600)
@@ -179,7 +179,7 @@ SCENARIOS = {
 
 def run_all() -> dict:
     results = {}
-    saved = os.environ.get("AUTODL_GPU_HOME")
+    saved = os.environ.get("AUTODL_AUTOGPU_HOME")
     for name, scenario in SCENARIOS.items():
         base, home = _fresh()
         try:
@@ -190,9 +190,9 @@ def run_all() -> dict:
         finally:
             shutil.rmtree(base, ignore_errors=True)
     if saved is None:
-        os.environ.pop("AUTODL_GPU_HOME", None)
+        os.environ.pop("AUTODL_AUTOGPU_HOME", None)
     else:
-        os.environ["AUTODL_GPU_HOME"] = saved
+        os.environ["AUTODL_AUTOGPU_HOME"] = saved
     return results
 
 

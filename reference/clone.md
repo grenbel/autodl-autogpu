@@ -1,6 +1,6 @@
 # 没有空闲卡时的等卡与克隆
 
-适用于 ctl v0.9、`reference/console.js` 第 9 版与 `reference/clone-page.js` 第 3 版。要开有卡而实例所在的主机没有空闲 GPU 时读这一份；`ctl auth show` 的 `clone` 里有没了结的克隆（`open_record` 不为 null）时也先读它，从"对话断了之后"读起。文中的"手册"是 `reference/console.md`，"原机器"是要克隆的那台实例，"新机器"是克隆出来的那台，"事务号"是开克隆记录时得到的 16 位十六进制数。`ctl` 的调用方式见 SKILL.md。
+适用于 ctl v0.10、`reference/console.js` 第 10 版与 `reference/clone-page.js` 第 4 版。要开有卡而实例所在的主机没有空闲 GPU 时读这一份；`ctl auth show` 的 `clone` 里有没了结的克隆（`open_record` 不为 null）时也先读它，从"对话断了之后"读起。文中的"手册"是 `reference/console.md`，"原机器"是要克隆的那台实例，"新机器"是克隆出来的那台，"事务号"是开克隆记录时得到的 16 位十六进制数。`ctl` 的调用方式见 SKILL.md。
 
 克隆是新租一台同原机器配置一样的实例（驱动可以更新，CPU 型号可以不同，见"找合适的主机"第 8 步），把系统盘与数据盘拷过去，任务换到新机器上跑。它花钱，只在用户开启了自动克隆、等卡等满之后做。全程不需要用户在场，对用户只在三处说话，即决定克隆时一句，换过去时汇报一次，出了问题时。你不释放任何实例，原机器由用户自己释放。
 
@@ -25,7 +25,7 @@
 
 克隆在两个页面上做，各用一份脚本。调用的写法、返回值的四种形状、截小图出帧、pending 的重试，都同手册第 3 节。
 
-实例列表页上克隆要用七个函数，平时贴的 `reference/console.min.js` 里没有它们。克隆时改贴 `reference/console-clone.min.js`（函数文本 45877 字节，SHA-256 `ccc4870339a959ec6bded9f646d746affa2f6140703da6744384a0b5b3ce76ea`），它是 `console.js` 的全部代码，平时的函数照样都在。页面里已经放过平时那一份的，先刷新页面再放这一份，否则得到的是一概拒绝的壳（another copy or version）；放过这一份之后，平时的模板拿到的也是它。完整模板与短模板的用法同手册第 2 节，存文本的键是另一个。
+实例列表页上克隆要用七个函数，平时贴的 `reference/console.min.js` 里没有它们。克隆时改贴 `reference/console-clone.min.js`（函数文本 45882 字节，SHA-256 `2dc47dee793997519cac6ef2b6c9649a1cf1100a0c25d50822b4f30f0b77abba`），它是 `console.js` 的全部代码，平时的函数照样都在。页面里已经放过平时那一份的，先刷新页面再放这一份，否则得到的是一概拒绝的壳（another copy or version）；放过这一份之后，平时的模板拿到的也是它。完整模板与短模板的用法同手册第 2 节，存文本的键是另一个。
 
 ```js
 (async function () {
@@ -34,7 +34,7 @@ var t = fn.toString();
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 45877 || h !== 'ccc4870339a959ec6bded9f646d746affa2f6140703da6744384a0b5b3ce76ea') return { ok: false, bytes: b.length, sha256: h };
+if (b.length !== 45882 || h !== '2dc47dee793997519cac6ef2b6c9649a1cf1100a0c25d50822b4f30f0b77abba') return { ok: false, bytes: b.length, sha256: h };
 try { sessionStorage.setItem('__autodl_console_clone_text', t); } catch (e) {}
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode, clone: api.clone, page: api.page() };
@@ -49,16 +49,16 @@ if (!t) return { ok: false, stored: false };
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 45877 || h !== 'ccc4870339a959ec6bded9f646d746affa2f6140703da6744384a0b5b3ce76ea') return { ok: false, stored: true, bytes: b.length, sha256: h };
+if (b.length !== 45882 || h !== '2dc47dee793997519cac6ef2b6c9649a1cf1100a0c25d50822b4f30f0b77abba') return { ok: false, stored: true, bytes: b.length, sha256: h };
 var fn = (0, eval)('(' + t + ')');
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode, clone: api.clone, page: api.page() };
 })()
 ```
 
-预期返回 `ok: true`、`version: 9`、`mode: 'live'`、`clone: true`。`clone` 不是 true，是页面里先有了平时那一份，刷新后再放。
+预期返回 `ok: true`、`version: 10`、`mode: 'live'`、`clone: true`。`clone` 不是 true，是页面里先有了平时那一份，刷新后再放。
 
-创建页（点"继续"之后的那一页）用 `reference/clone-page.js`，贴的是它去掉注释的 `reference/clone-page.min.js`（函数文本 29686 字节，SHA-256 `4742a3ef6b0bab636d6872e0366fd6d9429bb8c2f3e51900105032542b428dbc`）。它注册成 `window.__autodlClone`，每个函数的第一个参数都是原机器的实例 ID。页面是在同一个标签页里换到创建页的，实例列表页的脚本对象还在，但它在创建页上一概拒绝。
+创建页（点"继续"之后的那一页）用 `reference/clone-page.js`，贴的是它去掉注释的 `reference/clone-page.min.js`（函数文本 29690 字节，SHA-256 `0e9ba370a43e840c395f63e5139c75df7dd86b42aef7b16b1f42f88a255419da`）。它注册成 `window.__autodlClone`，每个函数的第一个参数都是原机器的实例 ID。页面是在同一个标签页里换到创建页的，实例列表页的脚本对象还在，但它在创建页上一概拒绝。
 
 ```js
 (async function () {
@@ -67,7 +67,7 @@ var t = fn.toString();
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 29686 || h !== '4742a3ef6b0bab636d6872e0366fd6d9429bb8c2f3e51900105032542b428dbc') return { ok: false, bytes: b.length, sha256: h };
+if (b.length !== 29690 || h !== '0e9ba370a43e840c395f63e5139c75df7dd86b42aef7b16b1f42f88a255419da') return { ok: false, bytes: b.length, sha256: h };
 try { sessionStorage.setItem('__autodl_clone_page_text', t); } catch (e) {}
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode };
@@ -82,14 +82,14 @@ if (!t) return { ok: false, stored: false };
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 29686 || h !== '4742a3ef6b0bab636d6872e0366fd6d9429bb8c2f3e51900105032542b428dbc') return { ok: false, stored: true, bytes: b.length, sha256: h };
+if (b.length !== 29690 || h !== '0e9ba370a43e840c395f63e5139c75df7dd86b42aef7b16b1f42f88a255419da') return { ok: false, stored: true, bytes: b.length, sha256: h };
 var fn = (0, eval)('(' + t + ')');
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode };
 })()
 ```
 
-预期返回 `ok: true`、`version: 3`、`mode: 'live'`。两组模板答 `ok: false` 或 `stored: false` 时的处理同手册第 2 节。
+预期返回 `ok: true`、`version: 4`、`mode: 'live'`。两组模板答 `ok: false` 或 `stored: false` 时的处理同手册第 2 节。
 
 - 创建页比实例列表长。进创建页后先用 `resize_window` 把视口设成宽 1600、高 2400；脚本不点视口外的东西，拒绝原因里有 `is outside the viewport` 时再加高（实测这个高度够用）。克隆的事做完后恢复
 - 创建页上从勾型号到最终确认只有两分钟，脚本自己卡着。所以不依赖创建页读数的事都排在进创建页之前

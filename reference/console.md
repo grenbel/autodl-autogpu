@@ -1,10 +1,10 @@
 # AutoDL 控制台操作手册
 
-适用于 `reference/console.js` 第 9 版。贴进页面的是它去掉注释与缩进的那一份 `reference/console.min.js`（函数文本 34090 字节，SHA-256 `8ce423996783a3651f59442c0ba226deee8abef6599930660c85ba27edcbc94d`）。这一份里没有克隆实例才用的那一段，其余代码逐行相同；要读脚本的代码看 `console.js`，贴的时候用 `console.min.js`。克隆实例时换贴带着那一段的 `reference/console-clone.min.js`，做法在 `reference/clone.md`。控制台上的按钮一律由这个页面脚本核对后再点。浏览器工具只用来打开和刷新页面、设视口、截小图让页面出帧、在定时选择器里打字，以及读主页（余额与提醒）和扣费页。任何原文、按钮或页面结构与本手册对不上，就停下告诉用户，不猜，也不换别的办法去点。
+适用于 `reference/console.js` 第 10 版。贴进页面的是它去掉注释与缩进的那一份 `reference/console.min.js`（函数文本 34095 字节，SHA-256 `12350addfdfd6bd880179d9d8b51089c642ccc26d3fb590a22667dd866008f85`）。这一份里没有克隆实例才用的那一段，其余代码逐行相同；要读脚本的代码看 `console.js`，贴的时候用 `console.min.js`。克隆实例时换贴带着那一段的 `reference/console-clone.min.js`，做法在 `reference/clone.md`。控制台上的按钮一律由这个页面脚本核对后再点。浏览器工具只用来打开和刷新页面、设视口、截小图让页面出帧、在定时选择器里打字，以及读主页（余额与提醒）和扣费页。任何原文、按钮或页面结构与本手册对不上，就停下告诉用户，不猜，也不换别的办法去点。
 
 下文的 `ctl` 指本 skill 的 `scripts/ctl`，调用方式见 SKILL.md；"实例ID"指这台实例在控制台里的 ID，形如 `abcd123456-1234abcd`。
 
-实测情况。2026-09-29 到 10-02 在一台测试实例上、内置浏览器的面板一直隐藏的情况下，用页面脚本走通过这些：读实例行；无卡开机（展开"更多"菜单、点"无卡模式开机"、绑定确认框、最终确认、结算为 `confirmed`）；实例关着时设定时关机（往选择器里打字、点两个"确定"、提示"设置成功"），带着定时开机，开机之后取消，以及关机之后取消还挂着的定时（提示"取消成功"）；已有定时时打开"修改"；读出关机确认框的原文后放弃；刷新之后用短模板取回脚本。有卡开机（"开机"按钮、绑定确认框、最终确认、结算）10-02 也用页面脚本走通过。菜单、确认框与对话框都要截两三次小图才显示完整。还没试过的有关机确认框的最终确认（这一版不放行）与 Claude in Chrome 下的情况。遇到与本手册不符的地方，按第 14 节停下。
+实测情况。2026-09-29 到 10-02 在一台测试实例上、内置浏览器的面板一直隐藏的情况下，用页面脚本走通过这些：读实例行；无卡开机（展开"更多"菜单、点"无卡模式开机"、绑定确认框、最终确认、结算为 `confirmed`）；实例关着时设定时关机（往选择器里打字、点两个"确定"、提示"设置成功"），带着定时开机，开机之后取消，以及关机之后取消还挂着的定时（提示"取消成功"）；已有定时时打开"修改"；读出关机确认框的原文后放弃；刷新之后用短模板取回脚本。有卡开机（"开机"按钮、绑定确认框、最终确认、结算）10-02 也用页面脚本走通过。菜单、确认框与对话框都要截两三次小图才显示完整。2026-10-06 第 10 版在真实页面上整份贴过一次、刷新后用短模板取回过三次，无卡开机与定时关机的设置、修改、取消都走通过。还没试过的有关机确认框的最终确认（这一版不放行）与 Claude in Chrome 下的情况。遇到与本手册不符的地方，按第 14 节停下。
 
 第 13 节（控制台关机）、第 15 节（原文与结构备查）、第 16 节（没有浏览器工具时）与第 17 节（接手已经开着的实例）在 `reference/console-more.md`，节号不变，用到时再读。
 
@@ -34,7 +34,7 @@ var t = fn.toString();
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 34090 || h !== '8ce423996783a3651f59442c0ba226deee8abef6599930660c85ba27edcbc94d') return { ok: false, bytes: b.length, sha256: h };
+if (b.length !== 34095 || h !== '12350addfdfd6bd880179d9d8b51089c642ccc26d3fb590a22667dd866008f85') return { ok: false, bytes: b.length, sha256: h };
 try { sessionStorage.setItem('__autodl_console_text', t); } catch (e) {}
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode, page: api.page() };
@@ -51,14 +51,14 @@ if (!t) return { ok: false, stored: false };
 var b = new TextEncoder().encode(t);
 var d = new Uint8Array(await crypto.subtle.digest('SHA-256', b));
 var h = Array.prototype.map.call(d, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-if (b.length !== 34090 || h !== '8ce423996783a3651f59442c0ba226deee8abef6599930660c85ba27edcbc94d') return { ok: false, stored: true, bytes: b.length, sha256: h };
+if (b.length !== 34095 || h !== '12350addfdfd6bd880179d9d8b51089c642ccc26d3fb590a22667dd866008f85') return { ok: false, stored: true, bytes: b.length, sha256: h };
 var fn = (0, eval)('(' + t + ')');
 var api = fn();
 return { ok: true, version: api.version, mode: api.mode, page: api.page() };
 })()
 ```
 
-- 预期返回 `ok: true`、`version: 9`、`mode: 'live'`。脚本把自己挂在 `window.__autodl` 上，之后每次调用都写成 `window.__autodl.row('实例ID')` 这样的形式。
+- 预期返回 `ok: true`、`version: 10`、`mode: 'live'`。脚本把自己挂在 `window.__autodl` 上，之后每次调用都写成 `window.__autodl.row('实例ID')` 这样的形式。
 - 完整模板答 `ok: false`，说明贴进去的与文件不一样，脚本没有执行。从文件重新复制再贴一次；还不一样就停下，不要改文件或模板去凑。
 - 短模板答 `stored: false`，是这个标签页里没有存着的文本；答 `ok: false` 而 `stored: true`，是存着的文本对不上。两种都改用完整模板贴一次（它会把存着的换掉）。短模板抛错（页面不让还原函数）时也一样，这种页面上以后每次都用完整模板。
 - `mode` 为 `'none'`，或 `page()` 说页面里已有另一份脚本（another copy or version），就刷新页面，再按第 3 步放一次。

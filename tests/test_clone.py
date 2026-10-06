@@ -1,6 +1,6 @@
 """Tests for what cloning adds to the local record (scripts/autodl_ctl.py, plan phase 11): the clones part with its
 budget groups, clone settings and clone records; daily fees in the ledger; the clone options of the budget check; auth
-inherit and auth released. Every test gets its own AUTODL_GPU_HOME (tests/conftest.py). The helpers are those of
+inherit and auth released. Every test gets its own AUTODL_AUTOGPU_HOME (tests/conftest.py). The helpers are those of
 tests/test_store.py."""
 import contextlib
 import copy
@@ -36,7 +36,7 @@ def clone_cmd(capsys, *extra, iid=ID, quote=QUOTE):
 # ---- Task 11.1: the clones part and the clone settings ----
 def test_the_version_is_0_9_0(capsys):
     assert ctl.main(["version"]) == 0
-    assert capsys.readouterr().out.strip() == "0.9.0"
+    assert capsys.readouterr().out.strip() == "0.10.0"
 
 
 def test_a_record_without_clones_stays_without_it(capsys, clock, tmp_path):
@@ -554,7 +554,7 @@ def test_a_second_open_in_the_group_is_refused(capsys, clock, tmp_path):
 
 def _child_open(home, project, hold, reached, go, q):
     """clone-record open in a process of its own; with HOLD it stops right after deciding, the record's lock held."""
-    os.environ["AUTODL_GPU_HOME"] = home
+    os.environ["AUTODL_AUTOGPU_HOME"] = home
     if hold:
         def hook(point, path=None):
             if point == "clone-open-decided":

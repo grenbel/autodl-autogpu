@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 @pytest.fixture(autouse=True)
 def _private_gpu_home(tmp_path, monkeypatch):
-    """The local record (~/.autodl-gpu) of every test is a fresh directory of its own; subprocesses inherit it."""
-    monkeypatch.setenv("AUTODL_GPU_HOME", str(tmp_path / "gpu-home"))
+    """The local record (~/.autodl-autogpu) of every test is a fresh directory of its own; subprocesses inherit it."""
+    monkeypatch.setenv("AUTODL_AUTOGPU_HOME", str(tmp_path / "gpu-home"))
 
 
 class Clock:

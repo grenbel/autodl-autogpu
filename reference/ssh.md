@@ -1,6 +1,6 @@
-# ctl 与 SSH（ctl v0.9）
+# ctl 与 SSH（ctl v0.10）
 
-本文件写本机助手 ctl v0.9 怎么连实例、有哪些命令。实例端的守护脚本怎么判断见 `reference/guard.md`，本机记录、授权与账本、校准见 `reference/ledger.md`，控制台上的操作见 `reference/console.md`，没有空闲卡时的等卡与克隆见 `reference/clone.md`。
+本文件写本机助手 ctl v0.10 怎么连实例、有哪些命令。实例端的守护脚本怎么判断见 `reference/guard.md`，本机记录、授权与账本、校准见 `reference/ledger.md`，控制台上的操作见 `reference/console.md`，没有空闲卡时的等卡与克隆见 `reference/clone.md`。
 
 ## 认准实例
 - 别名只说明怎么连，它连到哪台实例会变（`~/.ssh/config` 被改过，实例重建后换了端口而别名没改）。所以除 `check`、`wait`、`doctor` 外，每条带别名的命令都认定一台实例：命令行给了 `--instance <ID>` 就是它，否则取本机记录里这个别名核实过的对应（`check 别名 --instance ID` 记下的）
@@ -31,7 +31,7 @@
 - 发往实例的值（push 的父目录、pull 的路径、run 的 --cmd 与 --log、arm 的 --env-setup）以盘符开头时 ctl 拒绝执行，那是 Git Bash 改写了参数的迹象，改用 scripts/ctl 启动器
 
 ## 命令一览
-- `version` 打印 ctl 的版本（0.9.0）；`now` 打印此刻的 unix 秒（取 T0 用）；`doctor [别名]` 见下文
+- `version` 打印 ctl 的版本（0.10.0）；`now` 打印此刻的 unix 秒（取 T0 用）；`doctor [别名]` 见下文
 - 带别名的命令除 `check`、`wait`、`doctor` 外都可以加 `--instance <ID>`（见"认准实例"），下面不逐条重复
 - `wait 别名 [--state up|down] [--mode gpu|nogpu] [--timeout 10m] [--every 10]`：`up` 时每隔 `--every` 秒探一次，连上后识别模式，模式识别不出或与 `--mode` 不符退出 1；`down` 时连续 5 次探测都失败才算连不上（`confirmed` 仍是 false）；到 `--timeout` 还没等到退出 1
 - `tail 别名 任务名 [-n 行数]` 看任务日志的末尾，任务名写 `guard` 是守护自己的日志；`revive 别名 [--restart]` 把守护进程拉起来、不改任何设置；`push 别名 本地路径 实例上的父目录 [--overwrite] [--timeout 60m]` 与 `pull 别名 实例上的路径 本地目录 [--overwrite] [--timeout 60m]` 传文件，细节在"连接与重发"
@@ -47,7 +47,7 @@
 
 ## 别名的写法与第一次连接
 - 这一节的事都由你做。用户只做三件：把你给的公钥贴进控制台，把登录指令发给你，在浏览器里登录 AutoDL
-- 密钥。先问用户有没有已经加进 AutoDL 的密钥，有就用它（要的是私钥文件在哪，不是它的内容）。没有就生成一把专用的，`ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519_autodl -C autodl-gpu`。`-N ''` 是不设口令：ctl 用 BatchMode，不会停下来问口令（用户想要口令的，由用户自己把密钥加进 ssh-agent）。同名文件已经在时不要生成，它问要不要覆盖就不答 y，换个文件名或问用户。然后把 `.pub` 文件里的那一行原样给用户，请用户贴进控制台实例列表上方的"设置SSH免密登录"（账号级，贴一次，对账号下所有实例生效）。私钥的内容不读、不显示
+- 密钥。先问用户有没有已经加进 AutoDL 的密钥，有就用它（要的是私钥文件在哪，不是它的内容）。没有就生成一把专用的，`ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519_autodl -C autodl-autogpu`。`-N ''` 是不设口令：ctl 用 BatchMode，不会停下来问口令（用户想要口令的，由用户自己把密钥加进 ssh-agent）。同名文件已经在时不要生成，它问要不要覆盖就不答 y，换个文件名或问用户。然后把 `.pub` 文件里的那一行原样给用户，请用户贴进控制台实例列表上方的"设置SSH免密登录"（账号级，贴一次，对账号下所有实例生效）。私钥的内容不读、不显示
 - 主机与端口。控制台上的登录指令是打码的，不点显示它的按钮；请用户复制这台实例的登录指令发给你，形如 `ssh -p <端口> root@<主机>`，从里面取主机与端口。密码不要，用户连密码一起发来的也不用、不存
 - `~/.ssh/config` 里的一条别名至少有下面这几行，值换成这台实例的（密钥文件是加进 AutoDL 的那把公钥对应的私钥）
 

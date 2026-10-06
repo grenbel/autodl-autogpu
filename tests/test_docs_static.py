@@ -234,6 +234,43 @@ def test_both_readmes_tell_a_person_about_the_clone():
         assert "`reference/console-clone.min.js`" in text and "`reference/clone-page.js`" in text
 
 
+def _readme_targets(text: str) -> list:
+    """The files a README shows or links to: pictures by their src and Markdown links, without web addresses and
+    without the anchors of the page itself."""
+    targets = re.findall(r'<img[^>]*\bsrc="([^"]+)"', text) + re.findall(r"\]\(([^)\s]+)\)", text)
+    return [t for t in targets if not re.match(r"[a-z]+://|#", t)]
+
+
+def test_what_a_readme_shows_and_links_to_is_in_the_repository():
+    """A README is read on GitHub and in the installed directory: every picture and file it points to is a file of
+    the repository, and each language shows its own three diagrams, in the order the text walks through them."""
+    for path, suffix in ((README_EN, ".svg"), (README_CN, ".cn.svg")):
+        targets = _readme_targets(_text(path))
+        for target in targets:
+            assert (ROOT / target.split("#", 1)[0]).is_file(), f"{path.name}: {target}"
+        shown = [t for t in targets if t.startswith("assets/")]
+        assert shown == [f"assets/{name}{suffix}" for name in ("parts", "run", "clone")], (path.name, shown)
+
+
+def test_the_links_inside_a_readme_lead_to_its_sections():
+    """The table of contents and the pointers between sections use anchors written into the page, so that they are
+    the same in both languages and do not depend on how a heading is turned into an anchor."""
+    for path in (README_EN, README_CN):
+        text = _text(path)
+        anchors = re.findall(r'<a id="([a-z0-9-]+)"></a>', text)
+        assert len(anchors) == len(set(anchors)), (path.name, anchors)
+        used = set(re.findall(r"\]\(#([^)]+)\)", text))
+        assert used and used <= set(anchors), (path.name, sorted(used - set(anchors)))
+    cn, en = (re.findall(r'<a id="([a-z0-9-]+)"></a>', _text(p)) for p in (README_CN, README_EN))
+    assert cn == en                                             # the same sections, in the same order
+
+
+def test_the_readmes_use_the_skills_present_name():
+    for path in (README_EN, README_CN):
+        text = _text(path)
+        assert "autodl-autogpu" in text and "autodl-gpu" not in text, path.name
+
+
 def _headings(path: pathlib.Path) -> set:
     return set(re.findall(r"^#{2,3} (.+)$", _text(path), re.M))
 
@@ -305,7 +342,7 @@ def test_skill_points_only_to_manual_sections_that_exist():
 
 def test_skill_front_matter_and_length():
     skill = _text(SKILL)
-    m = re.match(r"---\nname: autodl-gpu\ndescription: (Use when [^\n]+)\n---\n", skill)
+    m = re.match(r"---\nname: autodl-autogpu\ndescription: (Use when [^\n]+)\n---\n", skill)
     assert m, skill[:200]
     assert len(m.group(0)) <= 1024 and len(m.group(1)) <= 500
     # read in one go: at the 0.41 tokens a byte measured on these files, 36000 bytes are about 14.8k tokens (the Read
@@ -328,13 +365,13 @@ def test_the_skill_is_found_when_experiments_run_by_themselves():
     experiment-running skill, a request to run the plan), the section the skill writes into a project names the skill,
     and jobs that other workflows start on the instance go through ctl run as well."""
     skill = _text(SKILL)
-    desc = re.match(r"---\nname: autodl-gpu\ndescription: (Use when [^\n]+)\n---\n", skill).group(1)
+    desc = re.match(r"---\nname: autodl-autogpu\ndescription: (Use when [^\n]+)\n---\n", skill).group(1)
     for needed in ("experiment", "pipeline", "自动跑实验"):
         assert needed in desc, needed
     # the condition comes before the situations it governs: a blind reader took "按计划自动跑实验" on its own as a pull
     assert desc.index("where the project's GPU is an AutoDL instance") < desc.index("pipeline") < desc.index("自动跑实验")
     block = skill.split("```\n## AutoDL\n", 1)[1].split("```", 1)[0]
-    assert "- skill: autodl-gpu" in block, block
+    assert "- skill: autodl-autogpu" in block, block
     run = [line for line in skill.splitlines() if line.startswith("- 长任务一律 `ctl run")]
     assert len(run) == 1 and "别的 skill 或流程" in run[0], run
 

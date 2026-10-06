@@ -538,7 +538,7 @@ def _check_table(hostname: bytes) -> dict:
 
 
 def _record() -> Path:
-    h = os.environ.get("AUTODL_GPU_HOME")   # a local: a failing lookup must not print the environment
+    h = os.environ.get("AUTODL_AUTOGPU_HOME")   # a local: a failing lookup must not print the environment
     assert h
     return Path(h)
 
@@ -1037,7 +1037,7 @@ def test_a_status_that_did_not_report_back_is_uncertain_not_unreachable(monkeypa
 
 # ---- ctl v0.8 (plan Phase 5) ----
 def test_the_local_record_is_isolated(tmp_path):
-    home = os.environ.get("AUTODL_GPU_HOME")   # a plain value: a failure must not print the whole environment
+    home = os.environ.get("AUTODL_AUTOGPU_HOME")   # a plain value: a failure must not print the whole environment
     assert home == str(tmp_path / "gpu-home")
 
 
@@ -1055,7 +1055,7 @@ def sent_args(fake, i=-1):
 
 def test_version_prints_the_ctl_version(capsys):
     assert ctl.main(["version"]) == 0
-    assert capsys.readouterr().out.strip() == "0.9.0"
+    assert capsys.readouterr().out.strip() == "0.10.0"
 
 
 def test_a_usage_error_is_exit_1_not_2(monkeypatch):
@@ -1153,10 +1153,10 @@ def _guard_file(tmp_path, monkeypatch):
 
 def test_deploy_installs_autostart(tmp_path, monkeypatch, capsys):
     good = _guard_file(tmp_path, monkeypatch)
-    cases = [((0, b"autostart installed (/etc/profile.d/autodl-gpu-guard.sh): at every container start ...\n", b""),
+    cases = [((0, b"autostart installed (/etc/profile.d/autodl-autogpu-guard.sh): at every container start ...\n", b""),
               0, "installed"),
-             ((0, b"autostart already installed (/etc/profile.d/autodl-gpu-guard.sh)\n", b""), 0, "already"),
-             ((1, b"", b"error: install-autostart: /etc/profile.d/autodl-gpu-guard.sh exists and was not written by "
+             ((0, b"autostart already installed (/etc/profile.d/autodl-autogpu-guard.sh)\n", b""), 0, "already"),
+             ((1, b"", b"error: install-autostart: /etc/profile.d/autodl-autogpu-guard.sh exists and was not written by "
                        b"this script; it is left alone\n"), 1, "failed"),
              (DROP, 2, "not sent"),
              (LOST, 6, "uncertain")]
@@ -1767,14 +1767,14 @@ def test_a_hanging_nvidia_smi_does_not_hold_the_probes(tmp_path):
 def test_launcher_skips_a_python_that_fails(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTODL_TEST_REAL_PY", sys.executable)
     r = _launch(tmp_path, "version", python=REAL_PY)
-    assert r.returncode == 0 and r.stdout.decode().strip() == "0.9.0", r.stderr.decode(errors="replace")
+    assert r.returncode == 0 and r.stdout.decode().strip() == "0.10.0", r.stderr.decode(errors="replace")
 
 
 @git_bash_only
 def test_launcher_prefers_python3(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTODL_TEST_REAL_PY", sys.executable)
     r = _launch(tmp_path, "version", python3=REAL_PY)   # python fails here: only python3 can answer
-    assert r.returncode == 0 and r.stdout.decode().strip() == "0.9.0", r.stderr.decode(errors="replace")
+    assert r.returncode == 0 and r.stdout.decode().strip() == "0.10.0", r.stderr.decode(errors="replace")
 
 
 @git_bash_only

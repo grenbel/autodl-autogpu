@@ -1,6 +1,6 @@
-# 守护脚本（autodl_guard.sh 0.8.0）
+# 守护脚本（autodl_guard.sh 0.8.1）
 
-本文件写实例端的守护脚本 0.8.0 实际怎么做：什么时候关机、看哪些信号、各条命令的约束、随开机自启、状态与日志。本机助手 ctl 的命令、连接与别名见 `reference/ssh.md`，本机记录、授权与账本、校准见 `reference/ledger.md`，控制台上的操作见 `reference/console.md`。
+本文件写实例端的守护脚本 0.8.1 实际怎么做：什么时候关机、看哪些信号、各条命令的约束、随开机自启、状态与日志。本机助手 ctl 的命令、连接与别名见 `reference/ssh.md`，本机记录、授权与账本、校准见 `reference/ledger.md`，控制台上的操作见 `reference/console.md`。
 
 ## 守护脚本做什么
 实例端的 `/root/autodl-tmp/.autodl-guard/autodl_guard.sh` 只决定什么时候调用官方的 `/usr/bin/shutdown`。它按实例实际在做的事判断是否在用：GPU 利用率、容器的 CPU 时间、磁盘读写字节、网络收发字节。用 run 登记的任务、screen 与 tmux 会话本身都不再算在用，登记的任务只用于日志、状态、off-now 的拒绝、跑完就关和安静期。装了随开机自启时，每次容器启动由 boot 按上一次 arm 为这种模式存下的设置自动 arm 并运行守护，见"随开机自启"一节。
@@ -77,8 +77,8 @@
 `nvidia-smi -L` 能列出 GPU 为 gpu；列不出且 cgroup 内存上限不超过 3 GiB（无卡模式是 2 GiB）为 nogpu；其余为 unknown。arm 遇到 unknown 会拒绝，只有用户核实了模式才用 `arm --mode gpu` 或 `--mode nogpu` 指定。无卡模式下 `nvidia-smi` 报无权限，检查时不探测 GPU（识别模式时仍会调用一次 `nvidia-smi -L`，经 timeout）。off-now 在没 arm 时识别不出模式，按有卡探测（探测失败即算在用）。status 的 `mode` 是 arm 时定的，`mode_now` 是此刻识别的。
 
 ## 随开机自启
-- `install-autostart` 在 `/etc/profile.d/` 里写一个钩子 `autodl-gpu-guard.sh`（首行 `# autodl-gpu guard autostart`，权限 644，先写临时文件再改名，写后读回核对）。AutoDL 容器的 1 号进程是 `bash /init/boot/boot.sh`，它 source `/etc/profile`，后者执行 `/etc/profile.d/*.sh`；登录 shell 也执行它们，所以钩子只在 `BASHPID` 为 1 且 `$0` 为 `/init/boot/boot.sh` 时动作：经 `/usr/bin/env` 给出 `AUTODL_GUARD_HOME` 与固定的 `PATH`，用 `setsid` 起一个脱离的 `bash -p -c`，输入输出都接 `/dev/null`，立刻返回。它在 1 号进程里不设变量、不改选项、不读数据盘、自己不输出、不失败。脱离的 shell 每秒看一次守护脚本可不可读，最多 60 秒，可读就 `exec bash -p <守护脚本> boot`，一直不可读就安静退出
-- 钩子里写死守护脚本的绝对路径与 `AUTODL_GUARD_HOME`，都加单引号。两者有一个不是绝对路径、或含单引号或换行时 install 拒绝（1），此前什么都不建、不写；钩子要运行的东西缺了也拒绝，并列出缺什么：守护脚本本身要是可读的普通文件（`bash -s` 从标准输入读进来的不行），`/usr/bin/env` 与 `/bin/bash` 要可执行，钩子的 `PATH` 里要有可执行的 `setsid`、`sleep`、`flock` 与 `timeout`（后两个是 boot 自己要用的，只在安装者的 `PATH` 里有不算）；`/etc/profile.d` 不存在也拒绝。装好（或已装好）后输出下次开机会用的设置，与 status 的 `boot_settings` 相同。再装一次时内容相同报已安装、不动文件；首行是我们的标记而内容不同（旧路径、旧版本）就替换；首行不是这个标记就拒绝、不动它。`uninstall-autostart` 只删我们的，不是就拒绝，没有就报未安装。两者都可重复执行。install 需要 flock 与 timeout（boot 要用），路径核对过后才建守护目录；uninstall 两者都不需要，也不建目录
+- `install-autostart` 在 `/etc/profile.d/` 里写一个钩子 `autodl-autogpu-guard.sh`（首行 `# autodl-autogpu guard autostart`，权限 644，先写临时文件再改名，写后读回核对）。AutoDL 容器的 1 号进程是 `bash /init/boot/boot.sh`，它 source `/etc/profile`，后者执行 `/etc/profile.d/*.sh`；登录 shell 也执行它们，所以钩子只在 `BASHPID` 为 1 且 `$0` 为 `/init/boot/boot.sh` 时动作：经 `/usr/bin/env` 给出 `AUTODL_GUARD_HOME` 与固定的 `PATH`，用 `setsid` 起一个脱离的 `bash -p -c`，输入输出都接 `/dev/null`，立刻返回。它在 1 号进程里不设变量、不改选项、不读数据盘、自己不输出、不失败。脱离的 shell 每秒看一次守护脚本可不可读，最多 60 秒，可读就 `exec bash -p <守护脚本> boot`，一直不可读就安静退出
+- 钩子里写死守护脚本的绝对路径与 `AUTODL_GUARD_HOME`，都加单引号。两者有一个不是绝对路径、或含单引号或换行时 install 拒绝（1），此前什么都不建、不写；钩子要运行的东西缺了也拒绝，并列出缺什么：守护脚本本身要是可读的普通文件（`bash -s` 从标准输入读进来的不行），`/usr/bin/env` 与 `/bin/bash` 要可执行，钩子的 `PATH` 里要有可执行的 `setsid`、`sleep`、`flock` 与 `timeout`（后两个是 boot 自己要用的，只在安装者的 `PATH` 里有不算）；`/etc/profile.d` 不存在也拒绝。装好（或已装好）后输出下次开机会用的设置，与 status 的 `boot_settings` 相同。再装一次时内容相同报已安装、不动文件；首行是我们的标记而内容不同（旧路径、旧版本）就替换；首行不是这个标记就拒绝、不动它。`uninstall-autostart` 只删我们的，不是就拒绝，没有就报未安装。两者都可重复执行。这个 skill 改名之前（守护 0.8.0 及更早）钩子叫 `autodl-gpu-guard.sh`、首行是 `# autodl-gpu guard autostart`：实例上还留着它时，install 装好新名的钩子之后把它删掉并说明（留着的话每次开机会把 boot 起两遍），删不掉就报错；uninstall 两个都删；只有旧名的那一个时 status 的 `autostart` 是 `stale`。旧名的文件首行不是那个标记的，不算我们的，不动它，只提一句。带着旧名钩子的实例由 install 接手、下一次开机由新名的钩子带起守护，2026-10-06 实测过。install 需要 flock 与 timeout（boot 要用），路径核对过后才建守护目录；uninstall 两者都不需要，也不建目录
 - boot 先把启动环境里的 `BASH_ENV`、`ENV`、`SHELLOPTS`、`BASHOPTS`、`CDPATH`、`GLOBIGNORE` 与导出的函数去掉，重新运行自己一次（`bash -p` 只管 bash 自己，管不到它启动的 bash 脚本，比如关机脚本），日志记 `BOOT start`。之后每一圈取生命周期锁与状态锁，按下面的次序查，第一条成立的决定这一圈；结果写进 `state2/autostart`，status 的 `autostart_this_boot` 显示本次开机的结果
   1. 这次开机有 0.7 守护在跑：`skipped:07`
   2. 这次开机已经 arm 过（AI 的 arm，或先跑的 boot）：`skipped:armed`，只确保守护在跑

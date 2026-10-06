@@ -1,5 +1,5 @@
 ---
-name: autodl-gpu
+name: autodl-autogpu
 description: Use when work in any project needs an AutoDL instance powered on or off in GPU mode (有卡) or non-GPU mode (无卡), switched between them, checked (status, balance, billing, free GPUs), or kept from burning GPU time while idle or after the session ends (空转, 忘关机, 自动关机); also, where the project's GPU is an AutoDL instance, before experiments, training or data transfer run on it, e.g. in an automated research or experiment pipeline, under another experiment skill, or on a request like 按计划自动跑实验 (自动科研).
 ---
 
@@ -34,10 +34,10 @@ description: Use when work in any project needs an AutoDL instance powered on or
 10. **页面内部的数据只经 `sshAddress` 读。** 它只在克隆时用来取新实例的 SSH 地址；它拒绝或读不到时请用户贴登录指令，不另写脚本去看页面的数据
 
 ## 怎么调用 ctl
-- 在 Git Bash 或 bash 里写 `bash <本 skill 的目录>/scripts/ctl <子命令> ...`，装在用户目录时就是 `bash ~/.claude/skills/autodl-gpu/scripts/ctl ...`，下文简写成 `ctl`。这个启动器会挑一个能用的 Python（也可以用环境变量 `AUTODL_PYTHON` 指定），并关掉 Git Bash 对 `/` 开头参数的改写
+- 在 Git Bash 或 bash 里写 `bash <本 skill 的目录>/scripts/ctl <子命令> ...`，装在用户目录时就是 `bash ~/.claude/skills/autodl-autogpu/scripts/ctl ...`，下文简写成 `ctl`。这个启动器会挑一个能用的 Python（也可以用环境变量 `AUTODL_PYTHON` 指定），并关掉 Git Bash 对 `/` 开头参数的改写
 - PowerShell 里用 Python 直接运行 `scripts/autodl_ctl.py`；命令里有引号时写进文件，用 `--cmd-file`
 - 含 `$` 的参数一律用单引号。时长写 90s、30m、2h，纯数字按分钟；只有 `auth check --hours` 是十进制小时
-- 开关机记在两处，项目的 `.autodl/power_log.jsonl`（不在项目根目录时加 `--project <项目根>`）与本机的用量账本（在 `~/.autodl-gpu`，不进任何仓库）
+- 开关机记在两处，项目的 `.autodl/power_log.jsonl`（不在项目根目录时加 `--project <项目根>`）与本机的用量账本（在 `~/.autodl-autogpu`，不进任何仓库）
 
 | 退出码 | 意思 |
 |---|---|
@@ -177,7 +177,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 
 ```
 ## AutoDL
-- skill: autodl-gpu（这台实例的开关机、切换模式与跑任务都用它，不直接 ssh 起任务，也不请用户手动开关机）
+- skill: autodl-autogpu（这台实例的开关机、切换模式与跑任务都用它，不直接 ssh 起任务，也不请用户手动开关机）
 - instance_id: abcd123456-1234abcd（控制台里的实例 ID）
 - ssh_alias: autodl-demo
 - data_dir: /root/autodl-tmp

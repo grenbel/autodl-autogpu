@@ -1,5 +1,5 @@
 """Tests for the local record (Store in scripts/autodl_ctl.py): where it may live, what it accepts, how it is locked,
-created and written. Every test gets its own AUTODL_GPU_HOME (tests/conftest.py). Child processes start with
+created and written. Every test gets its own AUTODL_AUTOGPU_HOME (tests/conftest.py). Child processes start with
 spawn, so their entry points are module-level functions. The POSIX checks run in WSL on Windows
 (tests/store_posix_check.py, with the record in WSL's own /tmp), and directly on a POSIX machine."""
 import copy
@@ -27,8 +27,8 @@ T0 = 1_790_000_000
 
 
 def gpu_home() -> pathlib.Path:
-    h = os.environ.get("AUTODL_GPU_HOME")   # read into a local: a failing lookup must not print the environment
-    assert h, "tests/conftest.py sets AUTODL_GPU_HOME for every test"
+    h = os.environ.get("AUTODL_AUTOGPU_HOME")   # read into a local: a failing lookup must not print the environment
+    assert h, "tests/conftest.py sets AUTODL_AUTOGPU_HOME for every test"
     return pathlib.Path(h)
 
 
@@ -69,7 +69,7 @@ def write_raw(data: bytes) -> pathlib.Path:
 
 # ---- child processes (module level: spawn imports this module) ----
 def _child_env(home: str) -> None:
-    os.environ["AUTODL_GPU_HOME"] = home
+    os.environ["AUTODL_AUTOGPU_HOME"] = home
 
 
 def _child_stuck_after_tmp(home, reached):
@@ -228,31 +228,31 @@ def _git_file(p: pathlib.Path) -> None:
 @pytest.mark.parametrize("case", ["cwd", "other", "home", "worktree"])
 def test_a_home_inside_the_repository_is_refused(case, tmp_path, monkeypatch):
     repo = tmp_path / "repo"
-    if case == "cwd":   # a relative AUTODL_GPU_HOME inside the repository the current directory is in
+    if case == "cwd":   # a relative AUTODL_AUTOGPU_HOME inside the repository the current directory is in
         _git_dir(repo)
         (repo / "sub").mkdir()
         monkeypatch.chdir(repo / "sub")
-        monkeypatch.setenv("AUTODL_GPU_HOME", ".autodl-gpu")
-        target = repo / "sub" / ".autodl-gpu"
+        monkeypatch.setenv("AUTODL_AUTOGPU_HOME", ".autodl-autogpu")
+        target = repo / "sub" / ".autodl-autogpu"
     elif case == "other":
         _git_dir(repo)
         target = repo / "deep" / "gpu-home"
-        monkeypatch.setenv("AUTODL_GPU_HOME", str(target))
+        monkeypatch.setenv("AUTODL_AUTOGPU_HOME", str(target))
     elif case == "home":   # the default location, in a home directory that is itself a repository
         _git_dir(repo)
-        monkeypatch.delenv("AUTODL_GPU_HOME")
+        monkeypatch.delenv("AUTODL_AUTOGPU_HOME")
         monkeypatch.setenv("USERPROFILE", str(repo))
         monkeypatch.setenv("HOME", str(repo))
-        target = repo / ".autodl-gpu"
+        target = repo / ".autodl-autogpu"
     else:
         _git_file(repo)
         target = repo / "gpu-home"
-        monkeypatch.setenv("AUTODL_GPU_HOME", str(target))
+        monkeypatch.setenv("AUTODL_AUTOGPU_HOME", str(target))
     with pytest.raises(ctl.StoreError) as e:
         with ctl.Store():
             pass
     # a relative path is refused before anything else: it would move with the working directory
-    assert e.value.kind == ("unsafe" if case == "cwd" else "repo") and "AUTODL_GPU_HOME" in str(e.value)
+    assert e.value.kind == ("unsafe" if case == "cwd" else "repo") and "AUTODL_AUTOGPU_HOME" in str(e.value)
     assert not target.exists()   # nothing was made: no record and no half-made directory next to it
     assert not target.parent.exists() or not any(".new-" in q.name for q in target.parent.iterdir())
 
@@ -433,12 +433,12 @@ def test_a_blocked_replace_keeps_the_old_store():
 def test_a_junction_as_the_record_is_refused(tmp_path, monkeypatch):
     import _winapi
     real, link = tmp_path / "real-home", tmp_path / "linked-home"
-    monkeypatch.setenv("AUTODL_GPU_HOME", str(real))
+    monkeypatch.setenv("AUTODL_AUTOGPU_HOME", str(real))
     with ctl.Store():
         pass
     _winapi.CreateJunction(str(real), str(link))
     try:
-        monkeypatch.setenv("AUTODL_GPU_HOME", str(link))
+        monkeypatch.setenv("AUTODL_AUTOGPU_HOME", str(link))
         with pytest.raises(ctl.StoreError) as e:
             with ctl.Store():
                 pass
@@ -1186,7 +1186,7 @@ def test_a_refused_save_still_writes_the_project_log(monkeypatch, capsys, clock,
 @windows_only
 @pytest.mark.parametrize("value", ["/autodl-test-rootless-home", "\\autodl-test-rootless-home"])
 def test_a_home_without_a_drive_is_refused_on_windows(monkeypatch, value):
-    monkeypatch.setenv("AUTODL_GPU_HOME", value)   # before 3.13 os.path.isabs takes it: it follows the current drive
+    monkeypatch.setenv("AUTODL_AUTOGPU_HOME", value)   # before 3.13 os.path.isabs takes it: it follows the current drive
     # taken, it would make a record at the current drive's root: fail before anything is made there
     monkeypatch.setattr(ctl, "publish_if_missing", lambda home: pytest.fail(f"{value!r} was taken as {home}"))
     with pytest.raises(ctl.StoreError) as e:
@@ -1199,7 +1199,7 @@ def test_a_home_without_a_drive_is_refused_on_windows(monkeypatch, value):
 def test_a_directory_made_by_hand_is_explained_first(tmp_path, monkeypatch):
     home = tmp_path / "by-hand"
     os.mkdir(home)   # inherits the DACL of its parent: whether private or not, removing it is the advice
-    monkeypatch.setenv("AUTODL_GPU_HOME", str(home))
+    monkeypatch.setenv("AUTODL_AUTOGPU_HOME", str(home))
     with pytest.raises(ctl.StoreError) as e:
         with ctl.Store():
             pass
@@ -1208,7 +1208,7 @@ def test_a_directory_made_by_hand_is_explained_first(tmp_path, monkeypatch):
 
 def test_a_relative_gpu_home_is_refused(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AUTODL_GPU_HOME", "rel-home")
+    monkeypatch.setenv("AUTODL_AUTOGPU_HOME", "rel-home")
     with pytest.raises(ctl.StoreError) as e:
         with ctl.Store():
             pass

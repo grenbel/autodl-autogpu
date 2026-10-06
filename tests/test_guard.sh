@@ -4389,7 +4389,12 @@ t15_boot_becomes_the_daemon() {
 }
 
 # the autostart hook: install-autostart, uninstall-autostart, status (plan Task 4.3, design 5.8)
-hookf() { printf '%s' "$AUTODL_TEST_PROFILE_D/autodl-gpu-guard.sh"; }   # where the hook goes in these tests
+hookf() { printf '%s' "$AUTODL_TEST_PROFILE_D/autodl-autogpu-guard.sh"; }   # where the hook goes in these tests
+oldhookf() { printf '%s' "$AUTODL_TEST_PROFILE_D/autodl-gpu-guard.sh"; }   # its name before the skill was renamed
+old_hook() {  # old_hook: a hook as the guard up to 0.8 wrote it, under the former name (its first line is what counts)
+  printf '%s\n' '# autodl-gpu guard autostart (written by install-autostart of autodl_guard.sh; its uninstall-autostart removes it)' \
+    'if [ "${BASHPID:-0}" = 1 ] && [ "$0" = /init/boot/boot.sh ]; then :; fi' ':' > "$(oldhookf)"
+}
 wait_status() {  # wait_status PATTERN: wait (max 10 s) until status has a line matching PATTERN
   local i
   for i in $(seq 1 40); do
@@ -4406,7 +4411,7 @@ t15_install_writes_the_hook() {
   rc=$?
   expect "install-autostart succeeds [rc=$rc]" [ "$rc" = 0 ]
   expect "and says so" grep -q 'autostart installed' <<< "$out"
-  expect "its first line is the mark" [ "$(head -n 1 "$(hookf)" | cut -c1-28)" = "# autodl-gpu guard autostart" ]
+  expect "its first line is the mark" [ "$(head -n 1 "$(hookf)" | cut -c1-32)" = "# autodl-autogpu guard autostart" ]
   self="$(readlink -f "$GUARD")"
   want="$(printf '%s\n' 'if [ "${BASHPID:-0}" = 1 ] && [ "$0" = /init/boot/boot.sh ]; then' \
     "    ( /usr/bin/env AUTODL_GUARD_HOME='$AUTODL_GUARD_HOME' PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin setsid /bin/bash -p -c 'i=0; until [ -r \"\$1\" ]; do i=\$((i + 1)); [ \"\$i\" -le 60 ] || exit 0; sleep 1; done; exec /bin/bash -p \"\$1\" boot' autodl-guard-boot '$self' < /dev/null > /dev/null 2>&1 & ) > /dev/null 2>&1 || :" \
@@ -4415,7 +4420,7 @@ t15_install_writes_the_hook() {
   expect "readable by all, written by root only" [ "$(stat -c %a "$(hookf)")" = 644 ]
   expect "bash reads it" bash -n "$(hookf)"
   expect "dash too" dash -n "$(hookf)"
-  expect "nothing else is left there" [ "$(ls -A "$AUTODL_TEST_PROFILE_D")" = autodl-gpu-guard.sh ]
+  expect "nothing else is left there" [ "$(ls -A "$AUTODL_TEST_PROFILE_D")" = autodl-autogpu-guard.sh ]
   expect "status says installed" status_has '^autostart=installed$'
   expect "the log says so" grep -q 'AUTOSTART installed' "$AUTODL_GUARD_HOME/guard.log"
   teardown
@@ -4465,6 +4470,63 @@ t15_uninstall_removes_the_hook() {
   rc=$?
   expect "again: exit 0 [rc=$rc]" [ "$rc" = 0 ]
   expect "saying it is not installed" grep -q 'not installed' <<< "$out"
+  teardown
+}
+
+# the skill was called autodl-gpu once, and so was the hook: an instance set up then still has it under that name
+t15_install_takes_over_from_the_hook_under_its_former_name() {
+  local out rc
+  setup
+  old_hook
+  expect "status calls our hook under the former name stale" status_has '^autostart=stale$'
+  out="$(g install-autostart 2>&1)"
+  rc=$?
+  expect "install succeeds [rc=$rc]" [ "$rc" = 0 ]
+  expect "the hook is there under the new name" status_has '^autostart=installed$'
+  expect "the one under the former name is gone" [ ! -e "$(oldhookf)" ]
+  expect "and install says so" grep -q "former name.*removed" <<< "$out"
+  expect "nothing else is left there" [ "$(ls -A "$AUTODL_TEST_PROFILE_D")" = autodl-autogpu-guard.sh ]
+  expect "the log says so" grep -q 'AUTOSTART removed the hook under its former name' "$AUTODL_GUARD_HOME/guard.log"
+  old_hook   # it comes back, say with a system disk copied from an older instance: the next install removes it again
+  out="$(g install-autostart 2>&1)"
+  expect "an install that finds the new hook in place still removes it" [ ! -e "$(oldhookf)" ]
+  expect "and says both" grep -q 'already installed' <<< "$out"
+  expect "the hook itself is as it was" status_has '^autostart=installed$'
+  teardown
+}
+
+t15_a_foreign_file_under_the_former_name_is_left_alone() {
+  local out rc
+  setup
+  printf 'echo not ours\n' > "$(oldhookf)"
+  expect "it does not count as a hook of ours" status_has '^autostart=none$'
+  out="$(g install-autostart 2>&1)"
+  rc=$?
+  expect "install succeeds [rc=$rc]" [ "$rc" = 0 ]
+  expect "the file is as it was" [ "$(cat "$(oldhookf)")" = "echo not ours" ]
+  expect "and install says that it left it" grep -q "not written by this script" <<< "$out"
+  quiet g uninstall-autostart
+  expect "uninstall leaves it too" [ "$(cat "$(oldhookf)")" = "echo not ours" ]
+  expect "and removes ours" [ ! -e "$(hookf)" ]
+  teardown
+}
+
+t15_uninstall_removes_the_hook_under_its_former_name_too() {
+  local out rc
+  setup
+  quiet g install-autostart
+  old_hook
+  out="$(g uninstall-autostart 2>&1)"
+  rc=$?
+  expect "uninstall succeeds [rc=$rc]" [ "$rc" = 0 ]
+  expect "both are gone" [ -z "$(ls -A "$AUTODL_TEST_PROFILE_D")" ]
+  expect "status says none" status_has '^autostart=none$'
+  old_hook
+  out="$(g uninstall-autostart 2>&1)"
+  rc=$?
+  expect "with only the one under the former name: it is removed [rc=$rc]" [ "$rc" = 0 ]
+  expect "nothing is left" [ -z "$(ls -A "$AUTODL_TEST_PROFILE_D")" ]
+  expect "and uninstall names it" grep -q "former name" <<< "$out"
   teardown
 }
 
@@ -5298,7 +5360,9 @@ TESTS=(t_durations t_arm_requires_values t_keep_expiry_shuts_down t_grace_period
   t15_boot_becomes_the_daemon t15_bad_settings_of_this_mode_are_passed_over
   t15_quick_failures_on_a_still_clock_leave_the_budget_alone t15_boot_leaves_the_start_environment_behind
   t15_install_writes_the_hook t15_install_again_changes_nothing_and_replaces_its_own_old_hook
-  t15_a_foreign_file_is_left_alone t15_uninstall_removes_the_hook t15_install_needs_profile_d_and_plain_paths
+  t15_a_foreign_file_is_left_alone t15_uninstall_removes_the_hook t15_install_takes_over_from_the_hook_under_its_former_name
+  t15_a_foreign_file_under_the_former_name_is_left_alone t15_uninstall_removes_the_hook_under_its_former_name_too
+  t15_install_needs_profile_d_and_plain_paths
   t15_install_takes_paths_as_they_are t15_install_says_when_there_is_nothing_to_arm_with
   t15_status_shows_the_autostart_keys t15_install_checks_the_test_wait
   t15_the_hook_starts_boot_only_as_the_container_start_script t15_the_hook_changes_nothing_in_process_1

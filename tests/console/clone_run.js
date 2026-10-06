@@ -258,9 +258,9 @@ window.__ccon = (function () {
   function reads() {
     __cfx.mount();
     var api = newApi();
-    eq('version', String(api && api.version), '3');
+    eq('version', String(api && api.version), '4');
     eq('the script registers itself', pick(window.__autodlClone, ['brand', 'version', 'mode']),
-       JSON.stringify({ brand: 'autodl-gpu clone-page.js', version: 3, mode: 'offline-test' }));
+       JSON.stringify({ brand: 'autodl-autogpu clone-page.js', version: 4, mode: 'offline-test' }));
     eq('the functions of the script, and no other', JSON.stringify(Object.keys(api)),
        JSON.stringify(['brand', 'version', 'mode', 'page', 'tickModel', 'pickCount', 'hosts', 'loadMoreHosts', 'pickHost', 'expansion',
                        'focusExpansion', 'prepareCreate', 'confirmCreate', 'result', 'leave']));

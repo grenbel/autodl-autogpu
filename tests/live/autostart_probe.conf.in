@@ -1,4 +1,4 @@
-; Calibration probe of the autodl-gpu skill: at container start it records the uptime and the time.
+; Calibration probe of the autodl-autogpu skill: at container start it records the uptime and the time.
 [program:autodl-probe-@TOKEN@]
 command=/bin/bash -c "cat /proc/uptime > @MARKER@; date +%%s >> @MARKER@"
 autostart=true

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# autodl_guard.sh - instance-side guard of the autodl-gpu skill.
+# autodl_guard.sh - instance-side guard of the autodl-autogpu skill.
 #
 # It only decides WHEN to call AutoDL's official shutdown command
 # (/usr/bin/shutdown, see https://www.autodl.com/docs/save_money/). It runs inside the
@@ -30,7 +30,7 @@
 # file that is there but cannot be read.
 set -u
 
-VERSION="0.8.0"
+VERSION="0.8.1"
 SCHEMA=2                   # the state layout this version reads and writes
 GH="${AUTODL_GUARD_HOME:-/root/autodl-tmp/.autodl-guard}"
 ST="$GH/state$SCHEMA"      # state2: 0.7's state/ is left alone (see the top of this file)
@@ -50,8 +50,10 @@ CG_DIR="${AUTODL_TEST_CGROUP_DIR:-/sys/fs/cgroup}"   # tests only: a stand-in fo
 NET_DEV="${AUTODL_TEST_NET_DEV:-/proc/net/dev}"      # tests only: a stand-in for /proc/net/dev
 UPTIME_FILE="${AUTODL_TEST_UPTIME:-/proc/uptime}"   # tests only: a stand-in for /proc/uptime
 PROFILE_D="${AUTODL_TEST_PROFILE_D:-/etc/profile.d}"   # tests only: a stand-in for /etc/profile.d
-HOOK="$PROFILE_D/autodl-gpu-guard.sh"   # the autostart hook (install-autostart, design 5.8)
-HOOK_MARK="# autodl-gpu guard autostart"   # its first line starts so: a file without it is not ours
+HOOK="$PROFILE_D/autodl-autogpu-guard.sh"   # the autostart hook (install-autostart, design 5.8)
+HOOK_MARK="# autodl-autogpu guard autostart"   # its first line starts so: a file without it is not ours
+OLD_HOOK="$PROFILE_D/autodl-gpu-guard.sh"   # the hook under the former name of the skill, as the guard up to 0.8.0 wrote
+OLD_HOOK_MARK="# autodl-gpu guard autostart"   # it: install-autostart takes over from it, uninstall-autostart removes it too
 HOOK_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin   # the PATH the hook gives what it starts
 GUARD_SESSION="autodl-guard"
 JOB_PREFIX="aj-"
@@ -1803,7 +1805,7 @@ hook_text() {  # the hook install-autostart writes for this script and this AUTO
   [ "${GH:0:1}" = / ] && [ "${SELF:0:1}" = / ] || return 2
   w="$(hook_wait)" || return 3
   IFS= read -r -d '' t << 'EOF' || :
-# autodl-gpu guard autostart (written by install-autostart of autodl_guard.sh; its uninstall-autostart removes it)
+# autodl-autogpu guard autostart (written by install-autostart of autodl_guard.sh; its uninstall-autostart removes it)
 # AutoDL starts a container with /init/boot/boot.sh as process 1, which sources /etc/profile and so this file; login
 # shells source it too. Only there, as process 1, does it start the guard's boot command, detached, and return at
 # once: nothing on the data disk is read in process 1 (the detached shell waits up to a minute for the guard script),
@@ -1822,12 +1824,34 @@ EOF
   t="$pre$q$SELF$q$t"
   printf '%s' "${t%$'\n'}"
 }
+old_hook_state() {  # the hook under the former name: none; ours, by its first line; foreign, not ours or not readable
+  local cur
+  [ -e "$OLD_HOOK" ] || { echo none; return 0; }
+  if jread cur "$OLD_HOOK" && [[ "$cur" == "$OLD_HOOK_MARK"* ]]; then echo ours; else echo foreign; fi
+}
 hook_state() {  # the hook now: none; installed, as install-autostart would write it now; stale, ours (by its first
-  # line) but not that; foreign, not ours or not readable
+  # line) but not that, or ours under the former name only; foreign, not ours or not readable
   local cur want
-  [ -e "$HOOK" ] || { echo none; return 0; }
+  if [ ! -e "$HOOK" ]; then
+    if [ "$(old_hook_state)" = ours ]; then echo stale; else echo none; fi
+    return 0
+  fi
   if ! jread cur "$HOOK" || [[ "$cur" != "$HOOK_MARK"* ]]; then echo foreign; return 0; fi
   if want="$(hook_text)" && [ "${cur%$'\n'}" = "$want" ]; then echo installed; else echo stale; fi
+}
+drop_old_hook() {  # remove the hook under the former name when it is ours, and say what was done: left in place it
+  # would start boot a second time at every container start. 1 when it is ours and cannot be removed
+  case "$(old_hook_state)" in
+    none) return 0 ;;
+    foreign)
+      echo "note: $OLD_HOOK (the hook's former name) is there and was not written by this script; it is left alone"
+      return 0
+      ;;
+  esac
+  nolock rm -f "$OLD_HOOK" 2> /dev/null
+  [ ! -e "$OLD_HOOK" ] || return 1
+  if [ -d "$GH" ]; then log "AUTOSTART removed the hook under its former name $OLD_HOOK"; fi   # main makes no home for uninstall
+  echo "the hook under its former name ($OLD_HOOK) was removed"
 }
 hook_has() {  # hook_has NAME: an executable regular file NAME in a directory of the hook's PATH, as exec finds it
   local d IFS=:
@@ -1899,6 +1923,8 @@ cmd_install_autostart() {  # install-autostart: the hook that runs boot at every
       echo "autostart installed ($HOOK): at every container start the guard arms with the settings the last arm kept for that mode"
       ;;
   esac
+  drop_old_hook ||
+    die "install-autostart: the hook is in place, but the one under its former name ($OLD_HOOK) could not be removed: both would run at a container start"
   v="$(boot_kept)"
   if [ -e "$ST/arm_incomplete" ]; then
     echo "note: the last arm was cut short (status: arm_incomplete=1); no start arms until an arm finishes"
@@ -1911,18 +1937,22 @@ cmd_install_autostart() {  # install-autostart: the hook that runs boot at every
     esac
   fi
 }
-cmd_uninstall_autostart() {  # uninstall-autostart: remove our hook; again: nothing changes; not ours: left alone
+cmd_uninstall_autostart() {  # uninstall-autostart: remove our hook, and ours under the former name; again: nothing
+  # changes; not ours: left alone
   local st
   [ $# -eq 0 ] || die "uninstall-autostart takes no options"
   st="$(hook_state)"
   case "$st" in
-    none) echo "autostart not installed ($HOOK)"; return 0 ;;
+    none) echo "autostart not installed ($HOOK)"; drop_old_hook; return 0 ;;   # a foreign file of the former name: noted
     foreign) die "uninstall-autostart: $HOOK was not written by this script; it is left alone" ;;
   esac
-  nolock rm -f "$HOOK" 2> /dev/null
-  [ ! -e "$HOOK" ] || die "uninstall-autostart: cannot remove $HOOK"
-  if [ -d "$GH" ]; then log "AUTOSTART uninstalled $HOOK (it was: $st)"; fi   # main makes no home for this
-  echo "autostart uninstalled ($HOOK)"
+  if [ -e "$HOOK" ]; then   # stale with no file here: ours is there under the former name only
+    nolock rm -f "$HOOK" 2> /dev/null
+    [ ! -e "$HOOK" ] || die "uninstall-autostart: cannot remove $HOOK"
+    if [ -d "$GH" ]; then log "AUTOSTART uninstalled $HOOK (it was: $st)"; fi   # main makes no home for this
+    echo "autostart uninstalled ($HOOK)"
+  fi
+  drop_old_hook || die "uninstall-autostart: cannot remove $OLD_HOOK"
 }
 
 cmd_run() {  # run NAME [--then-off] [--quiet DUR] [--log PATH] [--req ID] [--cmd-sha256 HEX] (--cmd-stdin | -- CMD...)

@@ -89,7 +89,7 @@ def test_the_static_check_sees_each_kind_of_machine_detail():
                               "bash /c/Users/someone/x"],
         "a home on Linux or macOS": ["/home/someone/x", "open /Users/someone/x"],
     }
-    harmless = ['("/c/Users/x/data", "C:/Users/x/data")', "like C:/Users/NAME/.autodl-gpu or /c/Users/NAME/.autodl-gpu",
+    harmless = ['("/c/Users/x/data", "C:/Users/x/data")', "like C:/Users/NAME/.autodl-autogpu or /c/Users/NAME/.autodl-autogpu",
                 '["pull", "autodl-test", "C:/Program Files/Git/root/autodl-tmp/out", "."]',
                 "wsl.exe -e bash tests/test_guard.sh", '["wsl.exe", *(["-d", distro] if distro else []), "-e"]',
                 '_wsl("mktemp", "-d", "/tmp/autodl-ctl-test.XXXXXX")']

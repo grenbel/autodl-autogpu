@@ -31,8 +31,8 @@
 // The offline test is tests/console/run.js; the mode 'offline-test' works only on its test page.
 (function (mode) {
   'use strict';
-  var VERSION = 9;
-  var BRAND = 'autodl-gpu console.js';
+  var VERSION = 10;
+  var BRAND = 'autodl-autogpu console.js';
   var TEST = mode === 'offline-test';
   var ID_SHAPE = TEST ? /^(abcd|wxyz|mnop|qrst|efgh)\d{6}-\d{4}[a-z]{4}$/ : /^[0-9a-z]{10}-[0-9a-z]{8}$/;
   var modeError = mode !== undefined && !TEST ? 'unknown mode'

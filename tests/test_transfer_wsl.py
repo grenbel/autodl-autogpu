@@ -149,7 +149,7 @@ def test_push_keeps_modes_on_a_real_tar(remote):
     r = _wsl("wslpath", "-a", Path(ctl.__file__).as_posix())
     ctl_path = r.stdout.decode().strip()
     assert r.returncode == 0 and ctl_path.startswith("/"), r.stderr
-    r = remote.sh(f"AUTODL_SSH={root}/bin/ssh AUTODL_GPU_HOME={root}/gpu-home python3 {shlex.quote(ctl_path)} "
+    r = remote.sh(f"AUTODL_SSH={root}/bin/ssh AUTODL_AUTOGPU_HOME={root}/gpu-home python3 {shlex.quote(ctl_path)} "
                   f"push demo {root}/src/code {root}/dest --instance {INSTANCE}")
     assert r.returncode == 0, r.stderr
     got = remote.sh(f"cd {root}/dest && stat -c '%a %n' code code/sub code/a.txt code/sub/run.sh").stdout.decode()

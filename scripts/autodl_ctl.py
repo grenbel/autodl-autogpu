@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local helper of the autodl-gpu skill.
+"""Local helper of the autodl-autogpu skill.
 
 Everything here goes over SSH with key-based login (BatchMode, never a password)
 or touches the project's power log. Powering an instance ON happens in the AutoDL
@@ -54,7 +54,7 @@ import threading
 import time
 import zlib
 
-CTL_VERSION = "0.9.0"
+CTL_VERSION = "0.10.0"
 GUARD_HOME = "/root/autodl-tmp/.autodl-guard"
 GUARD_PATH = GUARD_HOME + "/autodl_guard.sh"
 LOCAL_GUARD = pathlib.Path(__file__).resolve().parent / "autodl_guard.sh"
@@ -428,18 +428,18 @@ def empty_store() -> dict:
 
 
 def store_home() -> pathlib.Path:
-    """~/.autodl-gpu, or AUTODL_GPU_HOME. Refused when it, or any directory above it, holds a .git (a directory, or a
+    """~/.autodl-autogpu, or AUTODL_AUTOGPU_HOME. Refused when it, or any directory above it, holds a .git (a directory, or a
     worktree's file), or when that cannot be told: the record must stay out of every project."""
-    raw = os.environ.get("AUTODL_GPU_HOME") or str(pathlib.Path.home() / ".autodl-gpu")
+    raw = os.environ.get("AUTODL_AUTOGPU_HOME") or str(pathlib.Path.home() / ".autodl-autogpu")
     given = normalize_local(raw)
     # before Python 3.13, Windows takes \x or /x as absolute, though it follows the current drive
     if not os.path.isabs(given) or (os.name == "nt" and not os.path.splitdrive(given)[0]):
-        raise StoreError("unsafe", f"AUTODL_GPU_HOME={raw!r} is not an absolute path: the local record would move with "
+        raise StoreError("unsafe", f"AUTODL_AUTOGPU_HOME={raw!r} is not an absolute path: the local record would move with "
                                    "the working directory; give it an absolute path (on Windows with a drive letter "
-                                   "or a UNC share, like C:/Users/NAME/.autodl-gpu or /c/Users/NAME/.autodl-gpu)")
+                                   "or a UNC share, like C:/Users/NAME/.autodl-autogpu or /c/Users/NAME/.autodl-autogpu)")
     home = pathlib.Path(os.path.abspath(normalize_local(raw)))
     real = pathlib.Path(os.path.realpath(home))
-    hint = "set AUTODL_GPU_HOME to a directory outside every git repository"
+    hint = "set AUTODL_AUTOGPU_HOME to a directory outside every git repository"
     for p in (real, *real.parents):
         try:
             os.lstat(p / ".git")
@@ -630,7 +630,7 @@ def _private_one(p: pathlib.Path, st, want: int, home: pathlib.Path) -> None:
     if mode != want:
         raise StoreError("unsafe", f"{p} has mode {mode:o}, not {want:o}; fix it with: chmod {want:o} "
                                    f"{shlex.quote(str(p))} (if chmod does not change it, the file system does not keep "
-                                   "permissions: set AUTODL_GPU_HOME to a directory on one that does)")
+                                   "permissions: set AUTODL_AUTOGPU_HOME to a directory on one that does)")
 
 
 def check_private(home: pathlib.Path) -> None:
@@ -2872,13 +2872,13 @@ def cmd_auth_daily(a) -> int:
 # the instance over and removed the file. The two locks and the receipt live on the memory disk: they mean something
 # within one boot only, and must not be cloned along.
 HOOK_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"   # as the guard's autostart hook sets it
-TICKET = {"dir": "/etc/profile.d", "ticket": "/etc/profile.d/autodl-gpu-clone-ticket.sh",
-          "lock": "/dev/shm/autodl-gpu-clone-ticket.lock",       # held while deciding: the loop, and ctl's changes
-          "alive": "/dev/shm/autodl-gpu-clone-ticket.alive",     # held by the loop for as long as it lives; holds its PID
-          "receipt": "/dev/shm/autodl-gpu-clone-ticket.receipt",
+TICKET = {"dir": "/etc/profile.d", "ticket": "/etc/profile.d/autodl-autogpu-clone-ticket.sh",
+          "lock": "/dev/shm/autodl-autogpu-clone-ticket.lock",       # held while deciding: the loop, and ctl's changes
+          "alive": "/dev/shm/autodl-autogpu-clone-ticket.alive",     # held by the loop for as long as it lives; holds its PID
+          "receipt": "/dev/shm/autodl-autogpu-clone-ticket.receipt",
           "period": 30, "shutdown": "/usr/bin/shutdown", "path": HOOK_PATH}
-TICKET_TAG = "autodl-gpu-clone-ticket-loop"
-TICKET_HEAD = "# autodl-gpu clone ticket"
+TICKET_TAG = "autodl-autogpu-clone-ticket-loop"
+TICKET_HEAD = "# autodl-autogpu clone ticket"
 TICKET_GRACE_S = 900
 # The loop, run as: bash -p -c LOOP TAG ticket lock alive receipt period shutdown-command. It holds no single quote
 # (the ticket carries it between single quotes) and reads the ticket anew at every turn. Children never inherit the
@@ -2970,7 +2970,7 @@ def ticket_text(mark: str, source: str, hosts: list, deadline, grace_s: int, cfg
     must not be left without the loop. A second start is harmless (the loop holds a lock). It defines nothing, prints
     nothing and never fails."""
     cfg = cfg or TICKET
-    return (f"{TICKET_HEAD} (written by ctl ticket write of the autodl-gpu skill; ctl ticket clear removes it)\n"
+    return (f"{TICKET_HEAD} (written by ctl ticket write of the autodl-autogpu skill; ctl ticket clear removes it)\n"
             f"# mark={mark}\n# source={source}\n# hosts={' '.join(hosts)}\n# deadline={deadline}\n# grace={grace_s}\n"
             "# An instance cloned from this system disk carries this file. On one of the hosts above, a loop started at\n"
             "# container start shuts the instance down once the deadline has passed and this boot is older than the grace,\n"
@@ -4754,7 +4754,7 @@ class Parser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     p = Parser(prog="autodl_ctl.py",
-               description="Local helper of the autodl-gpu skill (SSH, guard, files, power log).")
+               description="Local helper of the autodl-autogpu skill (SSH, guard, files, power log).")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add(name, func, help_text, alias=True):

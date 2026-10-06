@@ -78,7 +78,7 @@ class Box:
         is killed when the snippet ends). The key=value words it prints come back as a dict."""
         pre = (f"B={shlex.quote(self.d)}; T=$B/ticket.sh; L=$B/lock; A=$B/alive; R=$B/receipt; "
                'export PATH="$B/bin:$PATH"; LP=; LP2=; '
-               'loop() { bash -p -c "$(cat "$B/loop.sh")" autodl-gpu-clone-ticket-loop "$T" "$L" "$A" "$R" 1 "$B/bin/stop" '
+               'loop() { bash -p -c "$(cat "$B/loop.sh")" autodl-autogpu-clone-ticket-loop "$T" "$L" "$A" "$R" 1 "$B/bin/stop" '
                '< /dev/null > /dev/null 2>&1 & }; '
                "trap 'kill $LP $LP2 2> /dev/null || :' EXIT; ")   # (never the snippet's exit status, set -e or not)
         r = _sh("bash", "-c", pre + script, timeout=timeout)

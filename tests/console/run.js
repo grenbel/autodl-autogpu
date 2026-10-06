@@ -264,9 +264,9 @@ window.__con = (function () {
   function reads() {
     __fx.mount(std());
     var api = newApi();
-    eq('version', String(api && api.version), '9');
+    eq('version', String(api && api.version), '10');
     eq('the script registers itself', pick(window.__autodl, ['brand', 'version', 'mode']),
-       JSON.stringify({ brand: 'autodl-gpu console.js', version: 9, mode: 'offline-test' }));
+       JSON.stringify({ brand: 'autodl-autogpu console.js', version: 10, mode: 'offline-test' }));
     eq('page() on the list', pick(call('page', function () { return api.page(); }), ['list', 'login']),
        '{"list":true,"login":false}');
     eq('row(A)', pick(call('row(A)', function () { return api.row(A); }), ROW), JSON.stringify({ ok: true, id: A,
@@ -1481,7 +1481,7 @@ window.__con = (function () {
     __fx.mount(std());
     var api = newApi();
     eq('the copy for cloning says what it is', String(api.clone), 'true');
-    window.__autodl = { brand: 'autodl-gpu console.js', version: 9, mode: 'offline-test' };
+    window.__autodl = { brand: 'autodl-autogpu console.js', version: 10, mode: 'offline-test' };
     var over = call('run the copy for cloning in a page that holds the everyday copy', function () { return make('offline-test'); });
     isRefused('row(A) through it', call('row(A)', function () { return over.row(A); }), /reload/);
     isRefused('startClone(E) through it', call('startClone(E)', function () { return over.startClone(E); }), /reload/);
@@ -1512,7 +1512,7 @@ window.__con = (function () {
               /no single/);
     clicks('the everyday copy leaves the clone item alone', { 'r4:hover': 1 });
     eq('nothing was read from the page data', JSON.stringify(__fx.dataReads()), '[]');
-    var full = { brand: 'autodl-gpu console.js', version: 9, mode: 'offline-test', clone: true };
+    var full = { brand: 'autodl-autogpu console.js', version: 10, mode: 'offline-test', clone: true };
     window.__autodl = full;
     var got = call('run the everyday copy in a page that holds the copy for cloning', function () { return make('offline-test'); });
     check('the copy for cloning serves the everyday copy as well', got === full, typeof got);
