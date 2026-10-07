@@ -35,7 +35,8 @@ description: Use when work in any project needs an AutoDL instance powered on or
 
 ## 怎么调用 ctl
 - 在 Git Bash 或 bash 里写 `bash <本 skill 的目录>/scripts/ctl <子命令> ...`，下文简写成 `ctl`。装在用户目录时，Claude Code 下是 `bash ~/.claude/skills/autodl-autogpu/scripts/ctl ...`，Codex 下是 `bash ~/.agents/skills/autodl-autogpu/scripts/ctl ...`。这个启动器会挑一个能用的 Python（也可以用环境变量 `AUTODL_PYTHON` 指定），并关掉 Git Bash 对 `/` 开头参数的改写
-- PowerShell 里用 Python 直接运行 `scripts/autodl_ctl.py`；命令里有引号时写进文件，用 `--cmd-file`
+- PowerShell 里用 Python 直接运行 `scripts/autodl_ctl.py`；带引号的任务命令用 `--cmd-file`，扣费行用 `auth charges --file`
+- 命令被关在沙箱里的环境（例如 Codex），ctl 要在沙箱之外运行，先请用户批准，见 `reference/ssh.md` 的"doctor 与启动器"
 - 含 `$` 的参数一律用单引号。时长写 90s、30m、2h，纯数字按分钟；只有 `auth check --hours` 是十进制小时
 - 开关机记在两处，项目的 `.autodl/power_log.jsonl`（不在项目根目录时加 `--project <项目根>`）与本机的用量账本（在 `~/.autodl-autogpu`，不进任何仓库）
 
@@ -63,14 +64,14 @@ description: Use when work in any project needs an AutoDL instance powered on or
 | 模式用法 | 三选一。无卡传数据、有卡跑实验，配合着用；只用有卡；只用无卡 | 只认当前对话与 `ctl auth show --instance <实例ID>` |
 | 预算 | 有没有；多少，按金额或 GPU 小时；按什么周期，每月或不分周期 | 同上 |
 | 守护设置 | 空闲多久自动关机，必填，建议 15 分钟；最晚关机，可选，写成"每次开机最多 N 小时"或"到某个钟点"；控制台定时关机，可选，写成每次开机后多长时间 | 当前对话、`## AutoDL` 段 |
-| 没有空闲卡时 | 要不要自动克隆一台同样配置的实例接着跑，默认关，用户没说就不开；开的话等多久（默认 30 分钟）、本任务最多克隆几次（默认 1）、之后原机器怎么办 | 只认当前对话与 `ctl auth show` 的 `clone` |
+| 没有空闲卡时 | 要不要自动克隆一台同样配置的实例接着跑（默认关，用户没说开就不开）；等多久（默认 30 分钟，用户可以改）；开的话还有本任务最多克隆几次（默认 1）、之后原机器怎么办 | 只认当前对话与 `ctl auth show` 的 `clone`；它是 null 就是没问过，要问 |
 
 - 用户说了模式用法与预算，就记进本机，`ctl auth grant --instance <实例ID> --alias <别名> --usage both|gpu|nogpu --budget none|<元>yuan|<小时>gpuh --period month|none --quote '<用户原话>'`。这样每台电脑、每台实例只问一次。用户随时可以改（重新 grant）或撤销（`ctl auth revoke --instance <实例ID>`）
 - **每次 grant 之后照输出里的 `note` 做，预算从哪里算起分三种。** 按月的金额预算管这台实例本月的全部扣费，先照手册第 12 节把本月已有的扣费导入账本，一笔都没有就导入 `'[]'`，不导入 `auth check` 不放行，每个月头一次检查之前也要导入。不分周期的预算从授权那一刻算起，之前的不算；重新 grant 只改总额，要从头算先 revoke 再 grant。GPU 小时预算只算本机账本记下的开机，之前手动用掉的不在内，导入扣费也补不上，授权时把这一点告诉用户。细节与补记的办法在 `reference/ledger.md` 的"授权、开机前的关口与账本"
 - 第一次在某个项目里用时，把实例信息与守护设置写进项目说明文件的 `## AutoDL` 段（示例在"第一次使用"；段已有而缺守护设置的，补上），以后的对话直接用。段里还有 data_dir 与 env_setup 两项，项目里找不到时和缺的信息一起问
 - **项目说明文件**是你这边每次对话开头都会读的那一份，Claude Code 是项目的 `CLAUDE.md`，Codex 是 `AGENTS.md`。找 `## AutoDL` 段时两份都看，写进你会读的那一份；两份都在用时段只留一份，另一份里写一行指向它
 - **别名怎么定。** `~/.ssh/config` 只说明每个别名怎么连，不说明它是哪台实例，里面可能有好几台，不能挑一个看着像的。别名取用户在对话里指明的、`## AutoDL` 写明的，或本机记录里核实过的对应。实例开着时用 `ctl check <别名> --instance <实例ID>` 核对，主机名是 `autodl-container-<实例ID>` 才算对上，对上就记进本机记录，不符退出 13。别的带别名的命令只认核实过的别名，没核实过的不连接、退出 13（`wait` 与 `doctor` 除外）。实例关着、又定不了是哪个别名，就问用户，不猜
-- 用户开启自动克隆的，用 `ctl auth clone --instance <实例ID> --enable ...` 记进本机；怎么问、要向用户说明的三件事与全部参数在 `reference/clone.md` 的"设置"。开启就是允许你新租一台机器，所以用户没说就不开，也不替用户决定
+- 没有空闲卡时怎么办不替用户定，没问过就问：先问要不要开启自动克隆，再问等多久（默认 30 分钟）。开与不开都记进本机，`ctl auth clone --instance <实例ID> --enable|--disable --wait <时长> --quote '<用户原话>'`；怎么问、开启前要向用户说明的三件事与全部参数在 `reference/clone.md` 的"设置"。开启就是允许你新租一台机器，所以用户没说开就不开
 - 向用户确认守护设置时说清两种上限的区别。最晚关机到点后不切断在用的任务，只是干完就关；控制台定时关机到点直接关。两样都不设时，开着之后的花费只靠空闲关机与你来管。并提醒用户：自己在控制台手动开机之前，先看这一行有没有定时关机，有就取消或改掉
 - 几处限制同时存在时以最严的为准；你所在环境的安全规则要求花钱前当场确认时，照环境的规则
 
@@ -173,7 +174,7 @@ description: Use when work in any project needs an AutoDL instance powered on or
 自动开机要一个能在页面里执行脚本的浏览器工具（Claude 的内置浏览器与 Claude in Chrome 有；别的环境以它自己的说明为准）。你这边没有，或者它不让执行这份页面脚本，都算没有，不用它的点击、坐标或键盘去代替。这时关机、守护与跑任务照常自动，开机要用户自己在控制台点，关机收尾里要看控制台的几样也请用户代看。明确告诉用户这台电脑上开机不是自动的，然后照手册第 16 节做：这一行的定时关机请用户照开机流程第 2 步设或取消（临时定时用户不愿设的，说明头一两分钟没有兜底），用户点到确认框为止，你做预算检查、用 `ctl now` 取 T0，用户再点确定，实例起来后先 `log on`。
 
 ## 第一次使用
-- **每台电脑。** 装好后跑 `ctl doctor` 检查本机环境。照 `reference/ssh.md` 的"别名的写法与第一次连接"生成 SSH 密钥，由用户在控制台实例列表上方的"设置SSH免密登录"里加公钥；在 `~/.ssh/config` 里给实例写别名，主机与端口由用户从登录指令里复制给你，密码不要。别名是用户早先写的，头一次开机前照同一节看它的主机密钥设置。用户本人在浏览器里登录 AutoDL
+- **每台电脑。** 装好后跑 `ctl doctor` 检查本机环境，缺的由你来补（先说缺什么、怎么装，用户同意再装，见 `reference/ssh.md` 的"doctor 与启动器"）。照 `reference/ssh.md` 的"别名的写法与第一次连接"生成 SSH 密钥，由用户在控制台实例列表上方的"设置SSH免密登录"里加公钥；在 `~/.ssh/config` 里给实例写别名，主机与端口由用户从登录指令里复制给你（运行中才显示，实例关着时见同一节），密码不要。别名是用户早先写的，头一次开机前照同一节看它的主机密钥设置。用户本人在浏览器里登录 AutoDL
 - **每个项目。** 确定"开始时要确定的信息"并写进 `## AutoDL` 段。段里的 data_dir 是数据盘上的工作目录（AutoDL 的数据盘在 `/root/autodl-tmp`），env_setup 是每个任务之前要执行的环境命令，因为非交互的 SSH 不加载 conda 与 CUDA 的路径。第一次跑任务前用一个小任务核实 env_setup 生效，例如 `ctl run <别名> envcheck --cmd 'which python; python -V'`，再 `ctl tail <别名> envcheck`
 
 ```

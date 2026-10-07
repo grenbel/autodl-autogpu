@@ -53,7 +53,7 @@
   <line x1="174" y1="184" x2="247" y2="177" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
   <circle class="gateGlow" cx="174" cy="164" r="9" fill="#FBBF24" opacity="0.35"/>
   <text x="220" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">预算关口</text>
-  <text x="220" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">每次开机前先过一遍</text>
+  <text x="220" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">每次开机前核对</text>
   <circle cx="640" cy="172" r="124" fill="url(#greenMedal)" stroke="#34D399" stroke-opacity="0.3" stroke-width="2"/>
   <circle cx="640" cy="172" r="116" fill="none" stroke="#34D399" stroke-opacity="0.08"/>
   <rect x="515" y="112" width="250" height="130" rx="21" fill="#111A35" stroke="#34D399" stroke-opacity="0.7" stroke-width="3"/>
@@ -64,8 +64,8 @@
   <path d="M 640 103 L 690 124 V 163 C 690 198 670 222 640 238 C 610 222 590 198 590 163 V 124 Z" fill="#0A1022" stroke="#34D399" stroke-width="5" stroke-linejoin="round"/>
   <path class="pulseBeat" d="M 605 166 H 621 L 631 148 L 644 185 L 657 157 L 666 166 H 676" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="640" cy="172" r="112" fill="none" stroke="#34D399" stroke-opacity="0.07" stroke-width="8"/>
-  <text x="640" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">守护</text>
-  <text x="640" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">空下来就关机</text>
+  <text x="640" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">守护程序</text>
+  <text x="640" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">空闲即关机</text>
   <circle cx="1060" cy="172" r="124" fill="url(#coralMedal)" stroke="#FB7185" stroke-opacity="0.3" stroke-width="2"/>
   <circle cx="1060" cy="172" r="116" fill="none" stroke="#FB7185" stroke-opacity="0.08"/>
   <ellipse cx="1060" cy="214" rx="105" ry="40" fill="#60A5FA" fill-opacity="0.06" stroke="#6F7BA6" stroke-opacity="0.5" stroke-width="3"/>
@@ -80,5 +80,5 @@
   <circle cx="1060" cy="166" r="7" fill="#FB7185"/>
   <path d="M 1022 221 L 1011 237 M 1098 221 L 1109 237" fill="none" stroke="#FB7185" stroke-width="6" stroke-linecap="round"/>
   <text x="1060" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">控制台定时关机</text>
-  <text x="1060" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">到点直接关机，你选了才设</text>
+  <text x="1060" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">到点直接关机，按需设置</text>
 </svg>

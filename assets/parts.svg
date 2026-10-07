@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620" role="img" aria-labelledby="t d">
+  <title id="t">How the parts of autodl-autogpu work together</title>
+  <desc id="d">A user computer and an AutoDL instance are joined by console and SSH roads, with budget and guard safeguards in place.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1022"/>
+      <stop offset="0.54" stop-color="#101735"/>
+      <stop offset="1" stop-color="#141B3A"/>
+    </linearGradient>
+    <linearGradient id="laptop" x1="56" y1="100" x2="416" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#202C52"/>
+      <stop offset="0.55" stop-color="#111A35"/>
+      <stop offset="1" stop-color="#090F21"/>
+    </linearGradient>
+    <linearGradient id="aiCore" x1="294" y1="174" x2="366" y2="246" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#203D68"/>
+      <stop offset="1" stop-color="#10172F"/>
+    </linearGradient>
+    <linearGradient id="card" x1="910" y1="228" x2="1178" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#28345E"/>
+      <stop offset="0.48" stop-color="#172141"/>
+      <stop offset="1" stop-color="#0A1022"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#24315A"/>
+      <stop offset="1" stop-color="#0A1022"/>
+    </linearGradient>
+    <radialGradient id="leftGlow" cx="0" cy="0" r="1" gradientTransform="translate(300 270) rotate(90) scale(270 300)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#60A5FA" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="roadGlow" cx="0" cy="0" r="1" gradientTransform="translate(700 300) rotate(90) scale(235 410)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#60A5FA" stop-opacity="0.07"/>
+      <stop offset="0.66" stop-color="#34D399" stop-opacity="0.035"/>
+      <stop offset="1" stop-color="#0B1022" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rightGlow" cx="0" cy="0" r="1" gradientTransform="translate(1040 330) rotate(90) scale(220 176)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34D399" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#34D399" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      text { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif; }
+      .flowA { animation: routeA 7.5s linear infinite; }
+      .flowB { animation: routeB 8.4s linear infinite; }
+      .aiPulse { animation: aiGlow 4.2s ease-in-out infinite; }
+      .fanTurn { animation: spin 8s linear infinite; transform-box: view-box; }
+      .fanLeft { transform-origin: 994px 320px; }
+      .fanRight { transform-origin: 1087px 320px; }
+      .guardBeat { animation: guard 3.2s ease-in-out infinite; transform-origin: 1128px 372px; }
+      .bubble { fill: #111A35; stroke: #60A5FA; stroke-opacity: 0.72; stroke-width: 3; stroke-linejoin: round; }
+      @keyframes routeA { to { stroke-dashoffset: -620; } }
+      @keyframes routeB { to { stroke-dashoffset: -650; } }
+      @keyframes aiGlow { 0%, 100% { opacity: 0.58; } 50% { opacity: 1; } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes guard { 0%, 100% { opacity: 0.62; } 45% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        .flowA, .flowB, .aiPulse, .fanTurn, .guardBeat { animation: none; }
+      }
+    </style>
+  </defs>
+  <rect x="1" y="1" width="1278" height="618" rx="28" fill="url(#bg)" stroke="#FFFFFF" stroke-opacity="0.13"/>
+  <rect x="2" y="2" width="1276" height="616" rx="27" fill="none" stroke="#60A5FA" stroke-opacity="0.05"/>
+  <ellipse cx="300" cy="270" rx="300" ry="270" fill="url(#leftGlow)"/>
+  <ellipse cx="700" cy="300" rx="410" ry="235" fill="url(#roadGlow)"/>
+  <ellipse cx="1040" cy="330" rx="176" ry="220" fill="url(#rightGlow)"/>
+  <path d="M 373 232 C 430 194 512 198 580 211 C 700 234 812 190 928 226" fill="none" stroke="#1E294F" stroke-width="18" stroke-linecap="round"/>
+  <path d="M 373 232 C 430 194 512 198 580 211 C 700 234 812 190 928 226" fill="none" stroke="#60A5FA" stroke-width="10" stroke-linecap="round"/>
+  <path class="flowA" d="M 373 232 C 430 194 512 198 580 211 C 700 234 812 190 928 226" fill="none" stroke="#EEF2FF" stroke-width="3" stroke-linecap="round" stroke-dasharray="28 592" opacity="0.72"/>
+  <path d="M 373 232 C 430 266 500 367 605 400 C 720 435 816 396 922 406" fill="none" stroke="#173E3D" stroke-width="18" stroke-linecap="round"/>
+  <path d="M 373 232 C 430 266 500 367 605 400 C 720 435 816 396 922 406" fill="none" stroke="#34D399" stroke-width="10" stroke-linecap="round"/>
+  <path class="flowB" d="M 373 232 C 430 266 500 367 605 400 C 720 435 816 396 922 406" fill="none" stroke="#EEF2FF" stroke-width="3" stroke-linecap="round" stroke-dasharray="28 622" opacity="0.66"/>
+  <ellipse cx="236" cy="548" rx="220" ry="24" fill="#020617" fill-opacity="0.52"/>
+  <rect x="56" y="100" width="360" height="420" rx="30" fill="url(#laptop)" stroke="#8292C4" stroke-opacity="0.54" stroke-width="3"/>
+  <rect x="66" y="110" width="340" height="400" rx="24" fill="none" stroke="#60A5FA" stroke-opacity="0.08" stroke-width="2"/>
+  <polygon points="40,520 432,520 456,544 18,544" fill="#111A35" stroke="#8292C4" stroke-opacity="0.72" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="188" y1="531" x2="284" y2="531" stroke="#6F7BA6" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="136" cy="219" r="56" fill="#0A1022" stroke="#A9B4D6" stroke-opacity="0.46" stroke-width="3"/>
+  <circle cx="136" cy="199" r="14" fill="#A9B4D6" fill-opacity="0.82"/>
+  <path d="M 105 250 C 111 224 161 224 168 250" fill="none" stroke="#A9B4D6" stroke-width="7" stroke-linecap="round"/>
+  <path class="bubble" d="M 183 157 H 247 Q 261 157 261 171 V 190 Q 261 204 247 204 H 218 L 204 217 V 204 H 183 Q 169 204 169 190 V 171 Q 169 157 183 157 Z"/>
+  <circle cx="194" cy="181" r="4" fill="#60A5FA"/>
+  <circle cx="215" cy="181" r="4" fill="#60A5FA" fill-opacity="0.72"/>
+  <circle cx="236" cy="181" r="4" fill="#60A5FA" fill-opacity="0.44"/>
+  <path d="M 261 181 C 282 181 292 193 302 207" fill="none" stroke="#60A5FA" stroke-width="3" stroke-linecap="round" stroke-dasharray="3 10" opacity="0.72"/>
+  <circle class="aiPulse" cx="330" cy="214" r="78" fill="#60A5FA" fill-opacity="0.06" stroke="#60A5FA" stroke-opacity="0.13" stroke-width="8"/>
+  <circle cx="330" cy="214" r="59" fill="url(#aiCore)" stroke="#60A5FA" stroke-width="4"/>
+  <circle cx="330" cy="214" r="42" fill="none" stroke="#A78BFA" stroke-opacity="0.22" stroke-width="2"/>
+  <path d="M 330 178 V 250 M 294 214 H 366 M 306 190 L 354 238 M 354 190 L 306 238" fill="none" stroke="#60A5FA" stroke-width="4" stroke-linecap="round" opacity="0.72"/>
+  <circle cx="330" cy="214" r="13" fill="#101735" stroke="#EEF2FF" stroke-width="3"/>
+  <circle cx="330" cy="214" r="5" fill="#60A5FA"/>
+  <path d="M 330 275 C 330 316 286 321 270 352" fill="none" stroke="#FBBF24" stroke-width="5" stroke-linecap="round" stroke-dasharray="3 12" opacity="0.72"/>
+  <line x1="126" y1="352" x2="126" y2="429" stroke="#FBBF24" stroke-width="7" stroke-linecap="round"/>
+  <line x1="210" y1="352" x2="210" y2="429" stroke="#FBBF24" stroke-width="7" stroke-linecap="round"/>
+  <line x1="126" y1="356" x2="210" y2="356" stroke="#FBBF24" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="135,369 183,357 183,421 135,410" fill="#FBBF24" fill-opacity="0.06" stroke="#FBBF24" stroke-width="4" stroke-linejoin="round"/>
+  <line x1="135" y1="389" x2="183" y2="382" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="135" cy="389" r="6" fill="#FBBF24"/>
+  <path d="M 242 363 Q 270 352 298 363 V 427 Q 270 416 242 427 Z" fill="#111A35" stroke="#FBBF24" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M 298 363 Q 326 352 354 363 V 427 Q 326 416 298 427 Z" fill="#111A35" stroke="#FBBF24" stroke-width="3" stroke-linejoin="round"/>
+  <line x1="298" y1="363" x2="298" y2="427" stroke="#FBBF24" stroke-width="3"/>
+  <line x1="254" y1="381" x2="286" y2="376" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+  <line x1="310" y1="376" x2="342" y2="381" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+  <line x1="254" y1="398" x2="286" y2="394" stroke="#FBBF24" stroke-opacity="0.62" stroke-width="3" stroke-linecap="round"/>
+  <line x1="310" y1="394" x2="342" y2="398" stroke="#FBBF24" stroke-opacity="0.62" stroke-width="3" stroke-linecap="round"/>
+  <rect x="538" y="112" width="260" height="152" rx="24" fill="#60A5FA" fill-opacity="0.045" stroke="#60A5FA" stroke-opacity="0.18" stroke-width="8"/>
+  <rect x="548" y="122" width="240" height="132" rx="18" fill="#0A1022" stroke="#60A5FA" stroke-width="3"/>
+  <path d="M 548 146 Q 548 122 572 122 H 764 Q 788 122 788 146 V 169 H 548 Z" fill="#1A2648"/>
+  <circle cx="570" cy="144" r="5" fill="#FB7185"/>
+  <circle cx="590" cy="144" r="5" fill="#FBBF24"/>
+  <circle cx="610" cy="144" r="5" fill="#34D399"/>
+  <line x1="548" y1="169" x2="788" y2="169" stroke="#EEF2FF" stroke-opacity="0.1"/>
+  <line x1="668" y1="187" x2="668" y2="212" stroke="#60A5FA" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 648 195 A 31 31 0 1 0 688 195" fill="none" stroke="#60A5FA" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="714,220 697,200 693,228 703,222 710,236" fill="#EEF2FF" stroke="#0A1022" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="573" y="344" width="190" height="112" rx="24" fill="#34D399" fill-opacity="0.045" stroke="#34D399" stroke-opacity="0.17" stroke-width="8"/>
+  <rect x="583" y="354" width="170" height="92" rx="18" fill="#0A1022" stroke="#34D399" stroke-width="3"/>
+  <path d="M 606 379 L 621 394 L 606 409" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="631" y1="409" x2="654" y2="409" stroke="#34D399" stroke-width="4" stroke-linecap="round"/>
+  <ellipse cx="1040" cy="468" rx="174" ry="28" fill="#020617" fill-opacity="0.5"/>
+  <circle cx="1040" cy="328" r="165" fill="none" stroke="#34D399" stroke-opacity="0.07" stroke-width="18"/>
+  <path d="M 910 246 L 942 228 H 1144 L 1178 250 V 400 L 1144 420 H 944 L 910 394 Z" fill="url(#card)" stroke="#91A4DA" stroke-opacity="0.34" stroke-width="3"/>
+  <path d="M 910 246 L 942 228 V 402 L 944 420 L 910 394 Z" fill="#0A1022" stroke="#91A4DA" stroke-opacity="0.22" stroke-width="2"/>
+  <path d="M 942 228 H 1144 L 1178 250 H 972 Z" fill="#3A4775" fill-opacity="0.62"/>
+  <rect x="896" y="278" width="16" height="80" rx="4" fill="#A9B4D6" fill-opacity="0.32"/>
+  <rect x="899" y="288" width="10" height="15" rx="2" fill="#0B1022"/>
+  <rect x="899" y="310" width="10" height="15" rx="2" fill="#0B1022"/>
+  <rect x="899" y="332" width="10" height="15" rx="2" fill="#0B1022"/>
+  <circle cx="994" cy="320" r="48" fill="#0A1022" stroke="#8292C4" stroke-opacity="0.4" stroke-width="3"/>
+  <circle cx="994" cy="320" r="40" fill="none" stroke="#34D399" stroke-opacity="0.15" stroke-width="2"/>
+  <g class="fanTurn fanLeft">
+    <ellipse cx="994" cy="296" rx="9" ry="22" fill="url(#blade)"/>
+    <ellipse cx="994" cy="296" rx="9" ry="22" fill="url(#blade)" transform="rotate(90 994 320)"/>
+    <ellipse cx="994" cy="296" rx="9" ry="22" fill="url(#blade)" transform="rotate(180 994 320)"/>
+    <ellipse cx="994" cy="296" rx="9" ry="22" fill="url(#blade)" transform="rotate(270 994 320)"/>
+  </g>
+  <circle cx="994" cy="320" r="12" fill="#172141" stroke="#34D399" stroke-width="2"/>
+  <circle cx="1087" cy="320" r="48" fill="#0A1022" stroke="#8292C4" stroke-opacity="0.4" stroke-width="3"/>
+  <circle cx="1087" cy="320" r="40" fill="none" stroke="#34D399" stroke-opacity="0.15" stroke-width="2"/>
+  <g class="fanTurn fanRight">
+    <ellipse cx="1087" cy="296" rx="9" ry="22" fill="url(#blade)"/>
+    <ellipse cx="1087" cy="296" rx="9" ry="22" fill="url(#blade)" transform="rotate(90 1087 320)"/>
+    <ellipse cx="1087" cy="296" rx="9" ry="22" fill="url(#blade)" transform="rotate(180 1087 320)"/>
+    <ellipse cx="1087" cy="296" rx="9" ry="22" fill="url(#blade)" transform="rotate(270 1087 320)"/>
+  </g>
+  <circle cx="1087" cy="320" r="12" fill="#172141" stroke="#34D399" stroke-width="2"/>
+  <circle cx="928" cy="226" r="24" fill="#0A1022" stroke="#60A5FA" stroke-width="4"/>
+  <line x1="928" y1="210" x2="928" y2="226" stroke="#60A5FA" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 917 216 A 18 18 0 1 0 939 216" fill="none" stroke="#60A5FA" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="922" cy="406" r="10" fill="#0A1022" stroke="#34D399" stroke-width="4"/>
+  <circle cx="922" cy="406" r="4" fill="#34D399"/>
+  <path d="M 1128 335 L 1163 350 V 376 C 1163 400 1149 417 1128 429 C 1107 417 1093 400 1093 376 V 350 Z" fill="#0A1022" stroke="#34D399" stroke-width="4" stroke-linejoin="round"/>
+  <path class="guardBeat" d="M 1104 376 H 1114 L 1121 363 L 1130 390 L 1139 370 L 1146 376 H 1153" fill="none" stroke="#34D399" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="1157" cy="414" r="6" fill="#FB7185"/>
+  <line x1="1147" y1="390" x2="1162" y2="405" stroke="#FB7185" stroke-width="3" stroke-linecap="round"/>
+  <text x="236" y="76" text-anchor="middle" fill="#EEF2FF" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="34" font-weight="750">Your computer</text>
+  <text x="1040" y="76" text-anchor="middle" fill="#EEF2FF" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="34" font-weight="750">AutoDL instance</text>
+  <text x="136" y="309" text-anchor="middle" fill="#EEF2FF" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="28" font-weight="700">You</text>
+  <text x="330" y="309" text-anchor="middle" fill="#EEF2FF" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="28" font-weight="750">AI</text>
+  <text x="236" y="488" text-anchor="middle" fill="#FBBF24" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="28" font-weight="700">Budget and ledger</text>
+  <text x="704" y="159" text-anchor="middle" fill="#EEF2FF" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="26" font-weight="650">Console</text>
+  <text x="668" y="306" text-anchor="middle" fill="#60A5FA" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="30" font-weight="750">Power on</text>
+  <text x="699" y="411" text-anchor="middle" fill="#EEF2FF" font-family="Cascadia Code,Consolas,Microsoft YaHei,monospace" font-size="26" font-weight="700">SSH</text>
+  <text x="668" y="498" text-anchor="middle" fill="#34D399" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="30" font-weight="750">Run jobs, shut down</text>
+  <text x="1040" y="535" text-anchor="middle" fill="#EEF2FF" font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif" font-size="28" font-weight="700">Guard: off when idle</text>
+</svg>

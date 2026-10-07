@@ -223,15 +223,18 @@ def test_the_references_name_this_version_of_ctl():
 
 
 def test_both_readmes_tell_a_person_about_the_clone():
-    """What a person has to know, in both languages: it is off until they turn it on, it rents a second instance, the
-    original is theirs to release, and a clone nobody takes over shuts itself down."""
+    """What a person has to know, in both languages: it is off until they turn it on, and the AI asks about it and
+    about the wait (30 minutes unless they say otherwise) at the first setup; it rents a second instance; the
+    original is theirs to release; and a clone nobody takes over shuts itself down. Which files do the cloning is
+    not for the README (2026-10-07: only what a person needs to know)."""
     cn, en = _text(README_CN), _text(README_EN)
-    for needed in ("没有空闲卡时自动克隆", "默认关闭", "新租一台", "由你自己释放", "没人接手", "`reference/clone.md`"):
+    for needed in ("没有空闲卡时自动克隆", "默认关闭", "由 AI 在首次配置时询问", "默认 30 分钟", "新租一台", "由用户自行释放", "无人接手"):
         assert needed in cn, needed
-    for needed in ("off by default", "rents a second instance", "yours to release", "nobody takes over", "`reference/clone.md`"):
+    for needed in ("off by default", "asked by the AI during the first-time setup", "30 minutes by default",
+                   "rents a second instance", "released by the user", "nobody takes over"):
         assert needed in en, needed
     for text in (cn, en):
-        assert "`reference/console-clone.min.js`" in text and "`reference/clone-page.js`" in text
+        assert "reference/" not in text and "scripts/" not in text
 
 
 def _readme_targets(text: str) -> list:
@@ -244,7 +247,7 @@ def _readme_targets(text: str) -> list:
 
 def test_what_a_readme_shows_and_links_to_is_in_the_repository():
     """A README is read on GitHub and in the installed directory: every picture and file it points to is a file of
-    the repository, each language shows its own four pictures in the order the text walks through them, and assets/
+    the repository, each language shows its own five pictures in the order the text walks through them, and assets/
     holds no picture that neither README shows."""
     used = set()
     for path, suffix in ((README_EN, ".svg"), (README_CN, ".cn.svg")):
@@ -252,9 +255,30 @@ def test_what_a_readme_shows_and_links_to_is_in_the_repository():
         for target in targets:
             assert (ROOT / target.split("#", 1)[0]).is_file(), f"{path.name}: {target}"
         shown = [t for t in targets if t.startswith("assets/")]
-        assert shown == [f"assets/{name}{suffix}" for name in ("hero", "demo", "safety", "nogpu")], (path.name, shown)
+        assert shown == [f"assets/{name}{suffix}" for name in ("hero", "demo", "parts", "safety", "nogpu")], (path.name, shown)
         used |= set(shown)
     assert {f"assets/{p.name}" for p in (ROOT / "assets").iterdir()} == used
+
+
+def test_the_readmes_show_which_part_does_what():
+    """The first version of the README had a structure diagram; the user asked for its logic back (2026-10-07: "the
+    framework diagram may go into the README as well, but it has to look good"). It is the picture `parts`, redrawn
+    in the look of the other four, in a short section of its own between the usage and the quick start. The words
+    beside it say what the picture shows: the AI reaches the instance by two routes, the console for the power-on
+    and SSH for the jobs and the shutdown; the budget and the ledger stay on the local computer; the guard runs on
+    the instance and does not depend on the conversation."""
+    for path, picture, needed in (
+            (README_CN, "assets/parts.cn.svg", ("## 工作原理", "两条途径", "控制台", "SSH", "保存在本机", "守护程序运行于实例之上")),
+            (README_EN, "assets/parts.svg", ("## How it works", "two routes", "console", "SSH", "local computer",
+                                             "The guard runs on the instance"))):
+        text = _text(path)
+        assert '<a id="how"></a>' in text and '<a href="#how">' in text, path.name
+        section = text.split('<a id="how"></a>', 1)[1].split('<a id="', 1)[0]
+        assert picture in section, path.name
+        for word in needed:
+            assert word in section, (path.name, word)
+        order = [text.index(f'<a id="{name}"></a>') for name in ("usage", "how", "quick-start")]
+        assert order == sorted(order), path.name
 
 
 def test_the_links_inside_a_readme_lead_to_its_sections():
@@ -384,8 +408,10 @@ def test_skill_front_matter_and_length():
     # four are known before acting; everything else of the clone is in reference/clone.md. 38000 until the skill was
     # written for an AI in Codex as well as one in Claude Code (phase 15): where it is installed, which file of the
     # project holds the section, and what counts as a browser tool differ between the two and are known before
-    # acting. 38500 bytes are about 15.8k tokens
-    assert len(skill.encode("utf-8")) <= 38500 and skill.count("\n") <= 220
+    # acting. 38500 until the user asked (2026-10-07) for three things that happen at first use, before anything else:
+    # the login command is shown only while the instance runs, the AI installs what the computer lacks, and it asks
+    # whether to clone and how long to wait when no GPU is free. 39000 bytes are about 16.0k tokens
+    assert len(skill.encode("utf-8")) <= 39000 and skill.count("\n") <= 220
     assert "\r" not in skill and skill.endswith("\n")
 
 
@@ -429,6 +455,126 @@ def test_the_first_connection_to_a_new_instance_is_written_down():
     assert "别名是用户早先写的" in first_use and "头一次开机前" in first_use and "主机密钥设置" in first_use, first_use
     rows = [line for line in skill.splitlines() if line.startswith("| 开机后 `ctl wait` 一直等不到")]
     assert len(rows) == 1 and section in rows[0], rows
+
+
+def test_where_the_login_command_is_and_that_it_shows_only_while_the_instance_runs():
+    """A person asked what "the login command" is and where AutoDL shows it (2026-10-07). It is in the column
+    "SSH登录" of the instance's row, and only while the instance is running: for one that is shut down the cell is
+    empty. The reference says so and says what to do when the instance is off and there is no alias yet; the first
+    use in SKILL.md names the condition; both READMEs tell a person where the line is and what it looks like."""
+    ssh_md, skill = _text(SSH_MD), _text(SKILL)
+    section = ssh_md.split("\n## 别名的写法与第一次连接\n", 1)[1].split("\n## ", 1)[0]
+    for needed in ('"SSH登录"', "运行中才显示", "关着时这一栏是空的", "开机流程"):
+        assert needed in section, needed
+    first_use = skill.split("\n## 第一次使用\n", 1)[1].split("\n- **每个项目。**", 1)[0]
+    assert "运行中才显示" in first_use, first_use
+    for path, needed in ((README_CN, ("SSH登录", "登录指令", "ssh -p", "关机时为空")),
+                         (README_EN, ("SSH登录", "登录指令", "ssh -p", "empty when the instance is shut down"))):
+        for word in needed:
+            assert word in _text(path), (path.name, word)
+
+
+def test_at_first_use_the_user_is_asked_about_the_clone_and_about_the_wait():
+    """What happens when no GPU is free is the user's to say (2026-10-07): whether to clone, asked first, and how long
+    to wait, 30 minutes unless the user says otherwise. Neither is settled silently: an instance whose clone item is
+    null has not been asked yet. The wait is recorded with the switch off as well."""
+    skill, clone = _text(SKILL), _text(CLONE_MD)
+    row = [line for line in skill.splitlines() if line.startswith("| 没有空闲卡时 |")]
+    assert len(row) == 1 and "要问" in row[0] and "默认 30 分钟" in row[0], row
+    asked = [line for line in skill.splitlines() if line.startswith("- 没有空闲卡时怎么办")]
+    assert len(asked) == 1, asked
+    for needed in ("先问要不要开启", "再问等多久", "--enable|--disable --wait"):
+        assert needed in asked[0], needed
+    settings = clone.split("\n## 设置\n", 1)[1].split("\n## ", 1)[0]
+    for needed in ("先问要不要开启", "再问等多久", "--disable --wait"):
+        assert needed in settings, needed
+
+
+def test_what_the_computer_lacks_is_installed_by_the_ai_that_uses_the_skill():
+    """A README is for people. What the skill needs on the computer is checked by the AI that uses it, and what is
+    missing is installed by that AI, after it has said what and how and the user has agreed (2026-10-07). So the
+    READMEs carry no list of requirements."""
+    ssh_md, skill = _text(SSH_MD), _text(SKILL)
+    section = ssh_md.split("\n## doctor 与启动器\n", 1)[1].split("\n## ", 1)[0]
+    for needed in ("由你来补", "用户同意", "重跑 doctor", "Git for Windows", "OpenSSH"):
+        assert needed in section, needed
+    first_use = skill.split("\n## 第一次使用\n", 1)[1].split("\n- **每个项目。**", 1)[0]
+    assert "缺的由你来补" in first_use, first_use
+    for path in (README_CN, README_EN):
+        text = _text(path)
+        assert "3.8.17" not in text and "<b>需要什么</b>" not in text and "<b>What you need</b>" not in text, path.name
+
+
+def test_a_host_that_sandboxes_commands_runs_ctl_outside_the_sandbox():
+    """Two runs in Codex sessions on Windows (2026-10-07). Under the default sandbox `version` and `now` work, but
+    doctor's ssh, paths and local record checks fail with "access denied", and Git Bash does not start at all. With
+    the record's directory and the temporary directory added as writable and the network allowed, it is no better:
+    the record cannot be made private (icacls exits 5) and a temporary directory made by Python cannot be used. So
+    the four things are not "allowed" one by one: ctl runs outside the sandbox, with the user's approval, or the
+    user runs the commands and pastes the output back. One power-on to shutdown was done each way that day: the
+    user running Codex's commands, and Codex running them itself in a session the user had left unsandboxed. That is not
+    missing software; nothing is installed and nothing is worked around. With ctl run by Python directly the bash
+    check does not count. SKILL.md points there where ctl is called; the READMEs say it to the person."""
+    ssh_md, skill = _text(SSH_MD), _text(SKILL)
+    section = ssh_md.split("\n## doctor 与启动器\n", 1)[1].split("\n## ", 1)[0]
+    for needed in ("沙箱", "在沙箱之外运行", "临时目录", "`~/.ssh`", "只有用户本人能访问", "拒绝访问", "不要去装东西",
+                   "由用户批准", "请用户在自己的终端里原样执行", "只给沙箱加可写目录、开网络不够",
+                   "bash 一项不通过可以不管"):
+        assert needed in section, needed
+    assert "要放行四样" not in section
+    calling = skill.split("\n## 怎么调用 ctl\n", 1)[1].split("\n## ", 1)[0]
+    assert "在沙箱之外运行" in calling and '`reference/ssh.md` 的"doctor 与启动器"' in calling, calling
+    for path, needed in ((README_CN, ("沙箱", "在沙箱之外运行")), (README_EN, ("sandbox", "outside the sandbox"))):
+        for word in needed:
+            assert word in _text(path), (path.name, word)
+
+
+def test_from_powershell_the_charge_rows_go_through_a_file():
+    """Found in the run driven by Codex (2026-10-07): from Windows PowerShell 5.1 the import of a charge row with
+    `--json` failed with "unrecognized arguments". Checked afterwards with a script that prints its arguments:
+    `--json '[{"serial": ...}]'` reaches python.exe without its quotes and split at the blank inside the time of
+    the charge; with the quotes backslash-escaped they survive, and it is split at the blank all the same.
+    `auth charges --file` takes the same list from a file (run from PowerShell 5.1 the same day: exit 0). The
+    manual says so where the charges are imported, says where the file goes (not into the project: a serial
+    number is in it) and that it is removed afterwards; SKILL.md says it where ctl is called from PowerShell."""
+    console = _text(ROOT / "reference" / "console.md")
+    section = console.split("\n## 12. 读扣费\n", 1)[1].split("\n## ", 1)[0]
+    for needed in ("PowerShell", "`--file <路径>`", "临时目录", "不放在项目里", "删掉"):
+        assert needed in section, needed
+    calling = _text(SKILL).split("\n## 怎么调用 ctl\n", 1)[1].split("\n## ", 1)[0]
+    assert "auth charges --file" in calling, calling
+
+
+def test_an_ssh_that_is_not_on_the_path_is_called_by_the_path_doctor_reports():
+    """Found in the same run: on that Windows machine `ssh` is not on the PATH of PowerShell, so the bare
+    `ssh -G <alias>` the manual asks for was "not recognized", while ctl finds the system's OpenSSH by itself and
+    doctor prints where it is."""
+    ssh_md = _text(SSH_MD)
+    section = ssh_md.split("\n## 别名的写法与第一次连接\n", 1)[1].split("\n## ", 1)[0]
+    assert "找不到 `ssh`" in section and "报出的完整路径" in section, section[:200]
+
+
+def test_the_readmes_keep_two_things_a_review_found_missing():
+    """A review of the fourth version (Codex, 2026-10-07) found two things a person needs in order not to lose money
+    or work. A provisional console timer is set without being asked for while the guard is not in place yet, and it
+    must not be cancelled by hand. And a job that stays quiet for long may be taken for idle and shut down, unless
+    the AI was told, so that it declares the quiet period."""
+    for path, needed in ((README_CN, ("临时定时关机", "请勿手动取消", "安静期")),
+                         (README_EN, ("provisional shutdown timer", "do not cancel it", "quiet period"))):
+        for word in needed:
+            assert word in _text(path), (path.name, word)
+
+
+def test_how_the_tests_are_run_is_said_where_the_tests_are():
+    """The READMEs are for people who use the skill. How the three suites are run, and that the guard's suite ends
+    other processes by words of their command line, is said in the tests directory (a person's remark of 2026-10-07:
+    is that section needed in the README?). The READMEs do not speak of the tests."""
+    text = _text(ROOT / "tests" / "README.md")
+    for needed in ("python -m pytest tests -q", "bash tests/test_guard.sh", "python tests/console/run_headless.py",
+                   "pkill -f", "never on an instance", "更不要在实例上跑"):
+        assert needed in text, needed
+    for path in (README_CN, README_EN):
+        assert "pytest" not in _text(path) and "pkill" not in _text(path), path.name
 
 
 def test_what_a_first_reader_of_the_five_files_missed_has_its_pointer():

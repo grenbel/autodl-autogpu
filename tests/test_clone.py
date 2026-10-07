@@ -118,6 +118,19 @@ def test_disabling_keeps_what_was_chosen(capsys, clock):
     assert rc == 0 and stored()["clones"]["groups"][NEW]["settings"]["enabled"] is False
 
 
+def test_the_wait_is_recorded_while_the_clone_stays_off(capsys, clock):
+    """At first use the user is asked two things: whether to clone, and how long to wait for a free GPU first. The wait
+    counts without the clone as well (when it is over the user is told and the waiting stops), so --disable takes it."""
+    clock.set(MID)
+    rc, res = clone_cmd(capsys, "--disable", "--wait", "45m", quote="no clone; wait 45 minutes")
+    assert rc == 0, res
+    assert stored()["clones"]["groups"][ID]["settings"] == {"enabled": False, "wait_s": 2700, "max": 1, "after": "remind",
+                                                              "quote": "no clone; wait 45 minutes", "at": MID}
+    assert res["clone"]["enabled"] is False and res["clone"]["wait_s"] == 2700
+    rc, res = clone_cmd(capsys, "--disable", quote="still no clone")       # said again without a time: the wait stays
+    assert rc == 0 and res["clone"]["wait_s"] == 2700, res
+
+
 def test_auth_show_has_the_clone_item(capsys, clock):
     clock.set(MID)
     assert grant(capsys)[0] == 0
