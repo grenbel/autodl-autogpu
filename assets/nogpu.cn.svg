@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="t d">
   <title id="t">没有空闲 GPU 时的两条路径</title>
-  <desc id="d">满载 GPU 的主机和等待中的实例，通向空闲卡或可选的克隆主机。</desc>
+  <desc id="d">满载 GPU 的主机和等待中的实例，通向空闲 GPU 或可选的克隆主机。</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="480" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#0B1022"/>
@@ -117,10 +117,10 @@
     <path d="M 1166 280 V 318 M 1147 299 H 1185" fill="none" stroke="#6F7BA6" stroke-width="4" stroke-linecap="round"/>
   </g>
   <circle cx="1204" cy="333" r="6" fill="#34D399"/>
-  <text x="900" y="78" text-anchor="end" fill="#EEF2FF" font-size="34" font-weight="750">等空闲卡</text>
+  <text x="900" y="78" text-anchor="end" fill="#EEF2FF" font-size="34" font-weight="750">等待空闲 GPU</text>
   <rect x="916" y="49" width="142" height="42" rx="21" fill="#60A5FA" fill-opacity="0.1" stroke="#60A5FA" stroke-opacity="0.5"/>
   <text x="987" y="78" text-anchor="middle" fill="#60A5FA" font-size="26" font-weight="650">默认</text>
-  <text x="990" y="430" text-anchor="end" fill="#EEF2FF" font-size="34" font-weight="750">克隆到另一台主机</text>
+  <text x="990" y="430" text-anchor="end" fill="#EEF2FF" font-size="34" font-weight="750">克隆至另一台主机</text>
   <rect x="1006" y="401" width="210" height="42" rx="21" fill="#A78BFA" fill-opacity="0.1" stroke="#A78BFA" stroke-opacity="0.5"/>
   <text x="1111" y="430" text-anchor="middle" fill="#A78BFA" font-size="26" font-weight="650">默认关闭</text>
 </svg>

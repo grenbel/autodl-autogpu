@@ -867,10 +867,20 @@ def test_local_paths_elsewhere_only_expand_the_home_directory():
 GIT_BASH = local_tools.git_bash()   # <Git>/usr/bin/bash.exe wherever Git for Windows is installed, or None
 
 
+def _git_bash_env(env):
+    """The environment for a Git Bash that a test starts: Git's own tools first on PATH, as in a Git Bash that
+    the user opens. One started from PowerShell or cmd inherits the Windows PATH instead, and there `bash` may be
+    WSL's, which cannot read a drive path, while cygpath and dirname are not found at all (seen 2026-10-08: six
+    launcher tests failed when pytest was started from PowerShell, and the nvidia-smi test passed without its stub)."""
+    env = dict(env)
+    env["PATH"] = str(GIT_BASH.parent) + os.pathsep + env.get("PATH", "")
+    return env
+
+
 @pytest.mark.skipif(GIT_BASH is None, reason="needs Git Bash on Windows")
 def test_launcher_passes_remote_paths_unchanged(tmp_path):
     launcher = (Path(ctl.__file__).resolve().parent / "ctl").as_posix()
-    env = {k: v for k, v in os.environ.items() if k not in ("MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL")}
+    env = _git_bash_env({k: v for k, v in os.environ.items() if k not in ("MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL")})
     env["AUTODL_PYTHON"] = sys.executable
     r = subprocess.run([str(GIT_BASH), launcher, "log", "note", "--instance", "demo", "--project", str(tmp_path),
                         "--field", "path=/root/autodl-tmp/x", "--field", "/root/y=z"],
@@ -1738,8 +1748,8 @@ def _launch(tmp_path, *argv, python3="exit 49", python=None, autodl_python=None)
     stubs = tmp_path / "stubs"
     _stub(stubs / "python3", python3)
     _stub(stubs / "python", python or "exit 9009")
-    env = {k: v for k, v in os.environ.items() if k not in ("MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL", "AUTODL_PYTHON")}
-    env["PATH"] = str(stubs) + os.pathsep + env.get("PATH", "")
+    env = _git_bash_env({k: v for k, v in os.environ.items() if k not in ("MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL", "AUTODL_PYTHON")})
+    env["PATH"] = str(stubs) + os.pathsep + env["PATH"]
     if autodl_python:
         env["AUTODL_PYTHON"] = autodl_python
     launcher = (Path(ctl.__file__).resolve().parent / "ctl").as_posix()
@@ -1756,7 +1766,7 @@ def test_a_hanging_nvidia_smi_does_not_hold_the_probes(tmp_path):
     _stub(stubs / "nvidia-smi", "sleep 30")
     t0 = time.monotonic()
     r = subprocess.run([str(GIT_BASH), "-c", 'PATH="$(cygpath -u "$STUBS"):$PATH"; ' + ctl.fingerprint_probe(1)],
-                       capture_output=True, env={**os.environ, "STUBS": str(stubs)}, timeout=25)
+                       capture_output=True, env=_git_bash_env({**os.environ, "STUBS": str(stubs)}), timeout=25)
     took = time.monotonic() - t0
     parts = r.stdout.decode(errors="replace").split("===")
     assert took < 10 and len(parts) == 4 and "gpu=absent" in parts[1], (took, r.stdout, r.stderr)

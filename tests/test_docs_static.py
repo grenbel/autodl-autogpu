@@ -281,6 +281,23 @@ def test_the_readmes_show_which_part_does_what():
         assert order == sorted(order), path.name
 
 
+def test_the_chinese_pictures_use_the_written_register():
+    """The user asked for the pictures to speak the README's written register and to carry few words (2026-10-08:
+    "more academic language, not much text, only what matters; the pictures of the README as well"). The spoken
+    words that the first drawings carried must not come back, in the pictures or in the alt texts that describe
+    them, and no picture carries more than a dozen labels."""
+    spoken = ("跑任务", "空闲卡", "到点", "克隆到")
+    for path in sorted((ROOT / "assets").glob("*.cn.svg")):
+        text = _text(path)
+        for word in spoken:
+            assert word not in text, (path.name, word)
+        assert len(re.findall(r"<text\b", text)) <= 12, path.name
+    for alt in re.findall(r'<img[^>]*\balt="([^"]*)"', _text(README_CN)):
+        for word in spoken:
+            assert word not in alt, (alt, word)
+    assert "开机、运行任务、关机" in _text(ROOT / "assets" / "hero.cn.svg")
+
+
 def test_the_links_inside_a_readme_lead_to_its_sections():
     """The line of links under the opening and the pointers between sections use anchors written into the page, so
     that they are the same in both languages and do not depend on how a heading is turned into an anchor."""

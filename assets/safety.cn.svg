@@ -80,5 +80,5 @@
   <circle cx="1060" cy="166" r="7" fill="#FB7185"/>
   <path d="M 1022 221 L 1011 237 M 1098 221 L 1109 237" fill="none" stroke="#FB7185" stroke-width="6" stroke-linecap="round"/>
   <text x="1060" y="343" text-anchor="middle" fill="#EEF2FF" font-size="34" font-weight="750">控制台定时关机</text>
-  <text x="1060" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">到点直接关机，按需设置</text>
+  <text x="1060" y="387" text-anchor="middle" fill="#A9B4D6" font-size="26" font-weight="400">到时即关机，按需设置</text>
 </svg>

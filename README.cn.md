@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/hero.cn.svg" alt="autodl-autogpu，开机，跑任务，关机" width="830"></p>
+<p align="center"><img src="assets/hero.cn.svg" alt="autodl-autogpu，开机、运行任务、关机" width="830"></p>
 
 <h1 align="center">由 AI 自动完成 AutoDL 实例的开关机</h1>
 
@@ -121,7 +121,7 @@ ssh -p 12345 root@connect.demo.seetacloud.com
 
 ## 费用控制
 
-<p align="center"><img src="assets/safety.cn.svg" alt="费用控制的三道机制。预算关口在每次开机前核对；守护程序在空闲时关机；控制台定时关机到点直接关机，仅在用户要求时设置" width="830"></p>
+<p align="center"><img src="assets/safety.cn.svg" alt="费用控制的三道机制。预算关口在每次开机前核对；守护程序在空闲时关机；控制台定时关机到时即关机，仅在用户要求时设置" width="830"></p>
 
 费用由三道机制共同约束，各自作用于不同环节。
 

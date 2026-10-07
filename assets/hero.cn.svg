@@ -59,7 +59,7 @@
     <text x="61" y="198" fill="#EEF2FF" font-family="Segoe UI,Arial,sans-serif" font-size="78" font-weight="800" letter-spacing="-0.8">autodl-autogpu</text>
     <rect x="64" y="220" width="112" height="4" rx="2" fill="#60A5FA"/>
     <rect x="181" y="220" width="36" height="4" rx="2" fill="#34D399"/>
-    <text x="64" y="272" fill="#EEF2FF" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="34" font-weight="600">开机，跑任务，关机。</text>
+    <text x="64" y="272" fill="#EEF2FF" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-size="34" font-weight="600">开机、运行任务、关机</text>
   </g>
   <g>
     <circle class="twinkle" cx="823" cy="74" r="3" fill="#EEF2FF"/>
