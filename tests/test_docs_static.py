@@ -316,10 +316,21 @@ def test_what_differs_between_claude_code_and_codex_is_named_for_both():
     assert "在页面里执行脚本" in more.split("\n## 16. 没有浏览器工具时\n", 1)[1].split("\n## ", 1)[0]
     head = manual.split("\n## 1. 基本规则\n", 1)[0]
     assert "`javascript_tool`" in head and "内置浏览器的叫法" in head and "第 16 节" in head, head
-    for path in (README_CN, README_EN):
+
+
+def test_the_readmes_are_for_claude_code_and_say_that_a_codex_version_follows():
+    """The user decided (2026-10-07, 2026-10-08) that there will be two versions, and that the one for Claude Code
+    is published first: "我们先推送适配claude版本的，后续再补充codex版本的". In Codex the power-on cannot yet be
+    done by the AI itself, so the READMEs do not offer the skill to Codex users: they give the one place to install
+    it for Claude Code, name the project file and the way to call it there, and say in one sentence that a version
+    for Codex follows. The text an AI reads keeps what was tested in Codex."""
+    for path, follows in ((README_CN, "Codex 版本将在后续提供"), (README_EN, "A version for Codex will follow")):
         text = _text(path)
-        for needed in ("~/.claude/skills/autodl-autogpu", "~/.agents/skills/autodl-autogpu", "`CLAUDE.md`", "`AGENTS.md`"):
+        for needed in ("~/.claude/skills/autodl-autogpu", "`CLAUDE.md`", "`/autodl-autogpu`", follows):
             assert needed in text, (path.name, needed)
+        for gone in ("~/.agents/skills", "AGENTS.md", "$autodl-autogpu"):
+            assert gone not in text, (path.name, gone)
+        assert text.count("Codex") == 1, (path.name, text.count("Codex"))
 
 
 def _headings(path: pathlib.Path) -> set:

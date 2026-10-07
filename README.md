@@ -70,19 +70,15 @@ The AI runs on the local computer and reaches the instance by two routes. Power-
 
 ### 1. Installation
 
-The skill works with Claude Code and with Codex; the two install it in different places.
+The current version is for Claude Code. A version for Codex will follow.
 
 ```bash
-# Claude Code
 git clone https://github.com/grenbel/autodl-autogpu ~/.claude/skills/autodl-autogpu
-
-# Codex
-git clone https://github.com/grenbel/autodl-autogpu ~/.agents/skills/autodl-autogpu
 ```
 
-Alternatively, the corresponding command can be sent to the AI, which then installs the skill itself. The AI checks the local environment at first use and, with the user's consent, installs whatever is missing; nothing has to be prepared in advance.
+Alternatively, this command can be sent to the AI, which then installs the skill itself. The AI checks the local environment at first use and, with the user's consent, installs whatever is missing; nothing has to be prepared in advance.
 
-In Codex and other environments that run commands in a sandbox, the skill's commands have to run outside the sandbox, because they need network access (SSH), read the SSH key, and keep a record under the user's home directory that only the user can access. At first use the AI explains this and asks for approval. On Windows, adding writable directories and network access to the sandbox is not sufficient to run these commands.
+Where the environment runs commands in a sandbox, the skill's commands have to run outside the sandbox, because they need network access (SSH), read the SSH key, and keep a record under the user's home directory that only the user can access. At first use the AI explains this and asks for approval.
 
 ### 2. First-time setup
 
@@ -117,7 +113,7 @@ The column is shown only while the instance is running and is empty when the ins
 | Whether to clone automatically when no GPU is free | off by default; answer explicitly to turn it on, see [When no GPU is free](#nogpu) |
 | How long to wait when no GPU is free | 30 minutes by default; another duration can be specified |
 
-After the setup, the settings of the instance and of the guard are written to the `## AutoDL` section of the project's instruction file (`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex), and the modes and the budget are stored on the local computer. Later conversations use them directly. If the AI does not invoke the skill by itself, call it by name: `/autodl-autogpu` in Claude Code, `$autodl-autogpu` in Codex.
+After the setup, the settings of the instance and of the guard are written to the `## AutoDL` section of the project's instruction file `CLAUDE.md`, and the modes and the budget are stored on the local computer. Later conversations use them directly. If the AI does not invoke the skill by itself, call it by name with `/autodl-autogpu`.
 
 > The modes and the budget given by the user constitute the permission. Within them the AI powers the instance on and incurs cost on its own, without asking each time. The permission does not expire, is stored per instance on the local computer, and is valid for conversations in any project. The user can ask the AI to show, change or revoke it at any time.
 
@@ -194,7 +190,7 @@ The job continues, and afterwards the guard shuts the instance down once it is i
 <details>
 <summary><b>Can it be used in an environment without a browser tool?</b></summary>
 
-Yes. The automatic power-on depends on a browser tool that can run a script in the page (the built-in browser of the Claude desktop app, for example). Without such a tool (Codex with no such tool configured, for example), shutdown, the guard and the jobs remain automatic; the power-on is clicked by the user in the console, and the AI states which button of which row to click and when. The checks after a shutdown also require the user to read information from the console.
+Yes. The automatic power-on depends on a browser tool that can run a script in the page (the built-in browser of the Claude desktop app, for example). Without such a tool, shutdown, the guard and the jobs remain automatic; the power-on is clicked by the user in the console, and the AI states which button of which row to click and when. The checks after a shutdown also require the user to read information from the console.
 
 </details>
 
